@@ -53,16 +53,18 @@ inhibitory_neurons = nest.Create("iaf_psc_exp", num_inhibitory, params=neuron_pa
 
 # Function to connect neurons with specified properties
 def connect_neurons(source, target, weight_factor):
-    weight = nest.random.normal(mean=1.0, std=0.25) * weight_factor * synapse_weight_factor
+    weight = nest.random.normal(mean=1.0, std=0.25) * weight_factor
     nest.Connect(source, target, {"rule": "pairwise_bernoulli", "p": connection_probability, "allow_autapses": False}, {"weight": weight, "delay": 1.0})
 
 # Connect neurons
-connect_neurons(excitatory_neurons, excitatory_neurons, 1.0)
-connect_neurons(excitatory_neurons, inhibitory_neurons, 1.0)
+connect_neurons(excitatory_neurons, excitatory_neurons, synapse_weight_factor)
+connect_neurons(excitatory_neurons, inhibitory_neurons, synapse_weight_factor)
 if inhibitory_exist:
-    connect_neurons(inhibitory_neurons, inhibitory_neurons, -1.0)
-    connect_neurons(inhibitory_neurons, excitatory_neurons, -1.0)
-
+    connect_neurons(inhibitory_neurons, inhibitory_neurons, -synapse_weight_factor)
+    connect_neurons(inhibitory_neurons, excitatory_neurons, -synapse_weight_factor)
+else:
+    connect_neurons(inhibitory_neurons, inhibitory_neurons, synapse_weight_factor)
+    connect_neurons(inhibitory_neurons, excitatory_neurons, synapse_weight_factor)
 # Create and connect noise generator
 noise = nest.Create("poisson_generator", params={"rate": noise_rate})
 nest.Connect(noise, excitatory_neurons + inhibitory_neurons, syn_spec={"delay": delay, "weight": noise_weight})
@@ -127,3 +129,4 @@ plt.close()
 
 print(f"Spike raster plot saved to {spike_plot_filename}")
 print(f"Membrane potential plot saved to {membrane_plot_filename}")
+print(spikes)

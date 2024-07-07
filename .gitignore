@@ -1,5 +1,6 @@
 tempsave
-
+*.mp4
+*.jpeg
 # Byte-compiled / optimized / DLL files
 __pycache__/
 *.py[cod]

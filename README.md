@@ -7,3 +7,6 @@ General Ideas
     - input spikes into spesific neurons
     - generate synthetic calcium imaging video
 - Agent action abilities
+    - Agent will input stimulation for an entire step
+    - each step will be some set length of time
+    
