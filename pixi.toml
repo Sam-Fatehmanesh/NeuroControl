@@ -1,0 +1,16 @@
+[project]
+name = "LFNeuroControl"
+version = "0.1.0"
+description = "Add a short description here"
+channels = ["conda-forge"]
+platforms = ["linux-64"]
+
+[tasks]
+
+[dependencies]
+python = ">=3.12.4,<3.13"
+pytorch = ">=2.3.1,<2.4"
+nest-simulator = ">=3.7,<4"
+matplotlib = ">=3.8.4,<3.9"
+pip = ">=24.0,<25"
+gymnasium = ">=0.29.1,<0.30"
