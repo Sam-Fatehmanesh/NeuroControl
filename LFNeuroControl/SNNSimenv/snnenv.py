@@ -7,48 +7,16 @@ import os
 import json
 import pickle
 from datetime import datetime
+from LFNeuroControl.SNNSimenv.synthCI import create_synth_frames, group_spikes_camera_fps_adjust
+from LFNeuroControl.SNNSimenv.utils import *
 
-def rand_connect_neurons(source, target, weight_factor, connection_probability, delay):
-    weight = nest.random.normal(mean=1.0, std=0.25) * weight_factor
-    nest.Connect(source, target, {"rule": "pairwise_bernoulli", "p": connection_probability, "allow_autapses": False}, {"weight": weight, "delay": delay})
 
-def external_rand_input_stimulation(neurons, fraction_stimulated, stimulation_probability, step_action_observsation_simulation_time, stimulator_synapse_weight, synapse_delay):
-    num_stimulated = int(len(neurons) * fraction_stimulated)
-    stimulated_neurons = np.random.choice(neurons, num_stimulated, replace=False)
-    stimulation_times = {
-        neuron: np.array(np.where(np.random.uniform(0, 1, size=int(step_action_observsation_simulation_time)) < stimulation_probability)[0] + 1, dtype=float)
-        for neuron in stimulated_neurons
-    }
-
-    for neuron_id, times in stimulation_times.items():
-        if len(times) > 0:
-            stim_gen = nest.Create("spike_generator", params={"spike_times": times})
-            nest.Connect(stim_gen, [neuron_id], syn_spec={"delay": synapse_delay, "weight": stimulator_synapse_weight})
-
-def calculate_spike_rates(spike_data):
-    senders = spike_data['senders']
-    times = spike_data['times']
-    total_time = times.max() - times.min()  # Total observation time
-    
-    # Find unique neurons and initialize spike count
-    unique_neurons = np.unique(senders)
-    spike_counts = {neuron: 0 for neuron in unique_neurons}
-    
-    # Count spikes for each neuron
-    for sender in senders:
-        spike_counts[sender] += 1
-    
-    # Calculate average spike rate for each neuron
-    average_rates = {neuron: spike_counts[neuron] / total_time for neuron in unique_neurons}
-    # Multiplied by a thousand since the rates are per milisecond
-    return average_rates * 1000
 
 class snnEnv(gymnasium.Env):   
     def __init__(self, snn_params, neuron_params, rl_params, snn_filename=None):
         super(snnEnv, self).__init__()
 
-        self.observation_space = spaces.MultiBinary(self.num_recorded_neurons * self.step_action_observsation_simulation_time)
-        self.action_space = spaces.MultiBinary(self.num_neurons_stimulated * self.step_action_observsation_simulation_time)
+        
 
         self.snn_filename = snn_filename
         self.newSNN = False
@@ -75,14 +43,21 @@ class snnEnv(gymnasium.Env):
         self.num_recorded_neurons = snn_params["num_recorded_neurons"]
 
         self.num_neuron_inhibitory = int(self.num_neurons * self.fraction_inhibitory)
-        self.num_neuron_excitatory = self.num_neurons - self.num_inhibitory
+        self.num_neuron_excitatory = self.num_neurons - self.num_neuron_inhibitory
         self.excitatory_neurons = nest.Create("iaf_psc_exp", self.num_neuron_excitatory, params=neuron_params)
         self.inhibitory_neurons = nest.Create("iaf_psc_exp", self.num_neuron_excitatory, params=neuron_params)
         self.neurons = self.inhibitory_neurons + self.excitatory_neurons
 
+        self.camera_fps = 280
+        self.image_m, self.image_n = 480, 480
+
         self.neuron_2d_pos = None
         
         self.num_neurons_stimulated = int(self.num_neurons * self.fraction_stimulated)
+
+        frame_camera_factor = min(self.camera_fps/1000, 1.0)
+        self.observation_space = spaces.box(low=0.0, high=1.0, shape=(int(self.step_action_observsation_simulation_time * frame_camera_factor), self.image_m, self.image_n), dtype=np.float32)
+        self.action_space = spaces.MultiBinary(self.num_neurons_stimulated * self.step_action_observsation_simulation_time)
 
         self.reset()
 
@@ -96,6 +71,12 @@ class snnEnv(gymnasium.Env):
         score = np.sum((score_factor * (avg_rates[0:number_scored_neurons]-desired_rates))**2)
         return score
 
+    def GenFramesFromSpikes(self, spikes):
+        camera_sim_adjusted_spikes = group_spikes_camera_fps_adjust(spikes, self.camera_fps)
+        observation = create_synth_frames(camera_sim_adjusted_spikes, self.neuron_2d_pos, self.step_action_observsation_simulation_time) / 255.0
+        return observation
+
+
     def step(self, action):
         self.current_step += 1
         self.current_time_step = self.current_step * self.step_action_observsation_simulation_time
@@ -104,19 +85,25 @@ class snnEnv(gymnasium.Env):
             times = stimulation_times[i] + self.current_time_step
             if len(times) > 0:
                 stim_gen = nest.Create("spike_generator", params={"spike_times": times})
-                nest.Connect(stim_gen, [neuron_id], syn_spec={"delay": synapse_delay, "weight": stimulator_synapse_weight})
+                nest.Connect(stim_gen, [neuron_id], syn_spec={"delay": self.synapse_delay, "weight": stimulator_synapse_weight})
         
         nest.Simulate(self.step_action_observsation_simulation_time)
 
         spikes = nest.GetStatus(spike_recorder, "events")[0]
+        
+        max_time = spikes['times'].max()
+        # Define the time window (last 10 milliseconds)
+        time_window = self.step_action_observsation_simulation_time
+        # Extract the indices where the times are within the last 10 milliseconds
+        indices = np.where(spikes['times'] >= (max_time - time_window))
+        # Get the senders and times for these indices
+        spikes = {'senders': spikes['senders'][indices], 'times': spikes['times'][indices]}
+
+
+        observation = self.GenFramesFromSpikes(spikes)
+        
+
         reward = self.score(spikes)
-        
-
-        
-
-
-
-
         terminated = self.current_step >= self.steps_per_ep
         return observation, reward, terminated, False, None
 
@@ -163,7 +150,7 @@ class snnEnv(gymnasium.Env):
                 nest.SetStatus([neuron_id], props)
         
         self.noise = nest.Create("poisson_generator", params={"rate": self.noise_rate})
-        nest.Connect(self.noise, self.excitatory_neurons + self.inhibitory_neurons, syn_spec={"delay": self.synapse_delay_time_length, "weight": noise_weight})
+        nest.Connect(self.noise, self.excitatory_neurons + self.inhibitory_neurons, syn_spec={"delay": self.synapse_delay_time_length, "weight": self.noise_weight})
 
         # Create multimeter and spike recorder
         self.multimeter = nest.Create("multimeter", params={"record_from": ["V_m"]})
@@ -171,7 +158,11 @@ class snnEnv(gymnasium.Env):
         self.spike_recorder = nest.Create("spike_recorder")
         nest.Connect(self.excitatory_neurons + self.inhibitory_neurons, self.spike_recorder)
 
-        return (None, None)
+        nest.Simulate(self.step_action_observsation_simulation_time)
+        spikes = nest.GetStatus(spike_recorder, "events")[0]
+        observation = self.GenFramesFromSpikes(spikes)
+
+        return observation
 
     def close(self):
         if self.snn_filename is None:
@@ -201,9 +192,6 @@ class snnEnv(gymnasium.Env):
             saved_filename = str(datetime.now())+"_snn_network_data.pkl"
             with open(saved_filename, 'wb') as file:
                 pickle.dump(network_data, file)
-
-            #print("Network saved to snn_network_data.pkl.")
-
             
 
                 

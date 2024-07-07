@@ -96,6 +96,7 @@ nest.Simulate(simulation_time)
 
 # Retrieve and plot spikes
 spikes = nest.GetStatus(spike_recorder, "events")[0]
+print(spikes)
 times = spikes["times"]
 senders = spikes["senders"]
 plt.figure(figsize=(12, 8))
