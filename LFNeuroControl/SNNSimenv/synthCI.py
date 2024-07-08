@@ -19,7 +19,7 @@ def group_spikes_camera_fps_adjust(spikes, fps):
     first_index = 0
     for i in range(1, len(spikes['times'])):
         if spikes['times'][i] > spikes['times'][first_index] + ms_per_frame:
-            time[first_index:i] = spikes['times'][first_index]
+            spikes['times'][first_index:i] = spikes['times'][first_index]
             first_index = i
     
     return spikes
@@ -51,7 +51,7 @@ def create_synth_frames(data, positions, total_time, frame_rate=1):
         frame_index = int(time // time_step)
         if frame_index < num_frames:
             neuron_index = data['senders'][i]
-            x, y = positions[neuron_index]
+            x, y = positions[neuron_index-1]
             x_idx, y_idx = int(x * frame_size), int(y * frame_size)
 
             for offset in range(10):  # Decay effect over multiple frames

@@ -37,8 +37,8 @@ def calculate_spike_rates(spike_data):
     # Count spikes for each neuron
     for sender in senders:
         spike_counts[sender] += 1
-    
-    # Calculate average spike rate for each neuron
-    average_rates = {neuron: spike_counts[neuron] / total_time for neuron in unique_neurons}
+        
     # Multiplied by a thousand since the rates are per milisecond
-    return average_rates * 1000
+    # Calculate average spike rate for each neuron
+    average_rates = {neuron: 1000 * spike_counts[neuron] / total_time for neuron in unique_neurons}
+    return average_rates
