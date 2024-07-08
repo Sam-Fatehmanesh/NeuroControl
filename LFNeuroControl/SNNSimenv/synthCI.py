@@ -75,7 +75,7 @@ def create_synth_frames(data, positions, total_time, frame_rate=1):
             y_struct_end = neuron_diameter_pixels - max(0, (y_idx + radius + 1) - y_end)
             struct_slice = structure[x_struct_start:x_struct_end, y_struct_start:y_struct_end]
 
-            
+
             for offset in range(10):  # Decay effect over multiple frames
                 decay_frame_index = frame_index + offset
                 if decay_frame_index < num_frames:

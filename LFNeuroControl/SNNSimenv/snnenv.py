@@ -77,12 +77,12 @@ class snnEnv(gymnasium.Env):
         self.stimulators = []
 
         # Define observation and action spaces
-        frame_camera_factor = min(self.camera_fps / 1000, 1.0)
+        frame_camera_factor = min(self.camera_fps / 1000, 1.0) // int(1000/self.camera_fps)
 
         self.observation_space = spaces.Box(
             low=0.0, 
             high=1.0, 
-            shape=(int(self.step_action_observsation_simulation_time * frame_camera_factor), self.image_m, self.image_n), 
+            shape=(int(int(self.step_action_observsation_simulation_time * frame_camera_factor), self.image_m, self.image_n), 
             dtype=np.float32
         )
         self.action_space = spaces.MultiBinary(self.num_neurons_stimulated * self.step_action_observsation_simulation_time)
