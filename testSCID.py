@@ -2,6 +2,7 @@ import numpy as np
 from scipy.ndimage import gaussian_filter
 import imageio
 from tqdm import tqdm
+import pdb
 
 # Constants
 frame_size = 480
@@ -86,8 +87,8 @@ def group_spikes_camera_fps_adjust(spikes, fps):
     return spikes
 
 # Example data and execution
-num_neurons = 128
-num_events = 1000
+num_neurons = 64
+num_events = 783
 time = 100  # Total time in seconds
 
 data = {
@@ -97,5 +98,6 @@ data = {
 data = group_spikes_camera_fps_adjust(data, 280)
 
 positions = np.random.rand(num_neurons, 2)
+#pdb.set_trace()
 frames = create_frames(data, positions, total_time=time, frame_rate=1)
 create_video(frames)

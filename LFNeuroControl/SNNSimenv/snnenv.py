@@ -78,6 +78,7 @@ class snnEnv(gymnasium.Env):
 
         # Define observation and action spaces
         frame_camera_factor = min(self.camera_fps / 1000, 1.0)
+
         self.observation_space = spaces.Box(
             low=0.0, 
             high=1.0, 
@@ -86,7 +87,7 @@ class snnEnv(gymnasium.Env):
         )
         self.action_space = spaces.MultiBinary(self.num_neurons_stimulated * self.step_action_observsation_simulation_time)
 
-        self.reset()
+        self.tempthing = self.reset()
 
     def score(self, true_spikes, target=None):
         """
@@ -120,9 +121,12 @@ class snnEnv(gymnasium.Env):
         """
         # Adjust spikes for camera FPS and generate frames
         camera_sim_adjusted_spikes = group_spikes_camera_fps_adjust(spikes, self.camera_fps)
+        #pdb.set_trace()
         observation = create_synth_frames(camera_sim_adjusted_spikes, self.neuron_2d_pos, self.step_action_observsation_simulation_time)
-        observation = [o / 255.0 for o in observation]  # Normalize frames
-        return observation
+        #observation = [np.clip(o, 0, 255).astype(np.uint8) for o in observation]
+        
+        ms_per_frame = int(1000/self.camera_fps)
+        return observation[::ms_per_frame]
 
     def step(self, action):
         """
@@ -155,14 +159,21 @@ class snnEnv(gymnasium.Env):
         max_time = spikes['times'].max()
         time_window = self.step_action_observsation_simulation_time
         indices = np.where(spikes['times'] >= (max_time - time_window))
-        spikes = {'senders': spikes['senders'][indices], 'times': spikes['times'][indices]}
 
+        # The minimum is subtracted to make frame index within observation length range
+        spikes['times'][indices] -= np.min(spikes['times'][indices])
+        spikes = {'senders': spikes['senders'][indices], 'times': spikes['times'][indices]}
         # Generate observation frames
+        
         observation = self.GenFramesFromSpikes(spikes)
 
         # Calculate reward
         reward = self.score(spikes)
         terminated = self.current_step >= self.steps_per_ep
+
+
+        #Since 
+
         return observation, reward, terminated, False, None
 
     def reset(self):
@@ -193,7 +204,7 @@ class snnEnv(gymnasium.Env):
                 rand_connect_neurons(self.inhibitory_neurons, self.excitatory_neurons, self.synapse_weight_factor, self.neuron_connection_probability, self.synapse_delay_time_length)
 
             # Generate random 2D positions for neurons
-            self.neuron_2d_pos = np.random.uniform(size=(self.num_neurons, 2))
+            self.neuron_2d_pos = np.random.rand(self.num_neurons, 2)
 
             # Connect noise generator to neurons
             nest.Connect(self.noise, self.excitatory_neurons + self.inhibitory_neurons, syn_spec={"delay": self.synapse_delay_time_length, "weight": self.noise_weight})

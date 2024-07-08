@@ -1,6 +1,6 @@
 import numpy as np
 from LFNeuroControl.SNNSimenv.snnenv import snnEnv
-
+from LFNeuroControl.SNNSimenv.synthCI import create_video
 
 # SNN Parameters
 snn_params = {
@@ -44,7 +44,9 @@ neuron_params = {
 env = snnEnv(snn_params=snn_params, 
 neuron_params=neuron_params, 
 rl_params=rl_params, 
-snn_filename="saved.pkl")
+snn_filename=None)
 
-env.step(np.ones((snn_params["num_neurons_stimulated"], int(env.step_action_observsation_simulation_time))))
-env.close()
+frames = env.step(np.ones((snn_params["num_neurons_stimulated"], int(env.step_action_observsation_simulation_time))))[0]
+# frames = [o * 255.0 for o in frames]
+#env.close()
+create_video(frames, filename='neuron_activity1.mp4', fps=1)
