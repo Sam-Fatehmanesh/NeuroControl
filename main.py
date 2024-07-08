@@ -44,7 +44,7 @@ neuron_params = {
 env = snnEnv(snn_params=snn_params, 
 neuron_params=neuron_params, 
 rl_params=rl_params, 
-snn_filename=None)
+snn_filename="saved.pkl")
 
 env.step(np.ones((snn_params["num_neurons_stimulated"], int(env.step_action_observsation_simulation_time))))
 env.close()
