@@ -11,6 +11,8 @@ from LFNeuroControl.SNNSimenv.synthCI import create_synth_frames, group_spikes_c
 from LFNeuroControl.SNNSimenv.utils import *
 import pdb
 
+
+
 class snnEnv(gymnasium.Env):
     def __init__(self, snn_params, neuron_params, rl_params, snn_filename=None):
         """
@@ -35,6 +37,7 @@ class snnEnv(gymnasium.Env):
         self.score_factor = rl_params["score_factor"]
 
         # Reset and configure the NEST kernel
+        #nest.local_num_threads = 16
         nest.ResetKernel()
         nest.SetKernelStatus({
             "resolution": self.snn_params["stimulation_time_resolution"], 
@@ -52,12 +55,14 @@ class snnEnv(gymnasium.Env):
         self.neuron_connection_probability = snn_params["neuron_connection_probability"]  # Connection probability between neurons
         self.synapse_delay_time_length = snn_params["synapse_delay_time_length"]  # Synapse delay time
         self.synapse_weight_factor = snn_params["synapse_weight_factor"]  # Synapse weight factor
+        self.ih_synapse_weight_factor = snn_params["ih_synapse_weight_factor"]
         self.noise_weight = snn_params["noise_weight"]  # Weight of noise stimulation
         self.fraction_stimulated = snn_params["fraction_stimulated"]  # Fraction of neurons to receive extra stimulation
         self.stimulation_probability = snn_params["stimulation_probability"]  # Probability of stimulation at any time step
         self.stimulator_synapse_weight = snn_params["stimulator_synapse_weight"]  # Synapse weight for stimulators
         self.stimulation_time_resolution = snn_params["stimulation_time_resolution"]  # Time resolution for stimulation
         self.num_recorded_neurons = snn_params["num_recorded_neurons"]  # Number of recorded neurons
+        self.auto_ih = snn_params["auto_ih"]
 
         # Calculate number of excitatory and inhibitory neurons
         self.num_neuron_inhibitory = int(self.num_neurons * self.fraction_inhibitory)
@@ -68,7 +73,7 @@ class snnEnv(gymnasium.Env):
         self.inhibitory_neurons = nest.Create("iaf_psc_exp", self.num_neuron_inhibitory, params=neuron_params)
         self.neurons = self.inhibitory_neurons + self.excitatory_neurons
 
-        self.camera_fps = 280  # Frames per second for the camera
+        self.camera_fps = 1000#280  # Frames per second for the camera
         self.image_m, self.image_n = 480, 480  # Image dimensions
 
         self.neuron_2d_pos = None  # 2D positions of neurons
@@ -79,12 +84,7 @@ class snnEnv(gymnasium.Env):
         # Define observation and action spaces
         frame_camera_factor = min(self.camera_fps / 1000, 1.0) // int(1000/self.camera_fps)
 
-        self.observation_space = spaces.Box(
-            low=0.0, 
-            high=1.0, 
-            shape=(int(int(self.step_action_observsation_simulation_time * frame_camera_factor), self.image_m, self.image_n), 
-            dtype=np.float32
-        )
+        self.observation_space = spaces.Box(low=0.0, high=1.0, shape=(int(int(self.step_action_observsation_simulation_time * frame_camera_factor)), self.image_m, self.image_n))
         self.action_space = spaces.MultiBinary(self.num_neurons_stimulated * self.step_action_observsation_simulation_time)
 
         self.tempthing = self.reset()
@@ -124,31 +124,34 @@ class snnEnv(gymnasium.Env):
         #pdb.set_trace()
         observation = create_synth_frames(camera_sim_adjusted_spikes, self.neuron_2d_pos, self.step_action_observsation_simulation_time)
         #observation = [np.clip(o, 0, 255).astype(np.uint8) for o in observation]
-        
+        if self.camera_fps > 999:
+            return observation
         ms_per_frame = int(1000/self.camera_fps)
         return observation[::ms_per_frame]
 
-    def step(self, action):
+    def simRun(self, spikeinputs=None):
         """
-        Perform one step in the environment.
+        Runs snn simulation for time defined by self.step_action_observsation_simulation_time
         
         Parameters:
-            action (np.ndarray): Action array indicating which neurons to stimulate.
+            spikeinputs (np.ndarray): neuron spike input array indicating which neurons to stimulate.
         
         Returns:
-            tuple: Observation, reward, terminated flag, truncated flag, and additional info.
+            dictionary: spikes, measured from snn activity.
         """
+
         self.current_step += 1
         self.current_time_step = self.current_step * self.step_action_observsation_simulation_time
 
-        # Stimulate neurons based on the action
-        for i, neuron_id in list(enumerate(self.neurons))[:self.num_neurons_stimulated]:
-            stimulation_times = np.array(np.where(action[i] > 0)[0] + 1, dtype=float)
-            times = stimulation_times + self.current_time_step
-            if len(times) > 0:
-                stim_gen = nest.Create("spike_generator", params={"spike_times": times})
-                nest.Connect(stim_gen, neuron_id, syn_spec={"delay": self.synapse_delay_time_length, "weight": self.stimulator_synapse_weight})
-        
+        if spikeinputs:
+            # Stimulate neurons based on the action
+            for i, neuron_id in list(enumerate(self.neurons))[:self.num_neurons_stimulated]:
+                stimulation_times = np.array(np.where(action[i] > 0)[0] + 1, dtype=float)
+                times = stimulation_times + self.current_time_step
+                if len(times) > 0:
+                    stim_gen = nest.Create("spike_generator", params={"spike_times": times})
+                    nest.Connect(stim_gen, neuron_id, syn_spec={"delay": self.synapse_delay_time_length, "weight": self.stimulator_synapse_weight})
+            
         # Simulate the network
         nest.Simulate(self.step_action_observsation_simulation_time)
 
@@ -163,8 +166,24 @@ class snnEnv(gymnasium.Env):
         # The minimum is subtracted to make frame index within observation length range
         spikes['times'][indices] -= np.min(spikes['times'][indices])
         spikes = {'senders': spikes['senders'][indices], 'times': spikes['times'][indices]}
-        # Generate observation frames
+
+        return spikes
+
+
+    def step(self, action):
+        """
+        Perform one step in the environment.
         
+        Parameters:
+            action (np.ndarray): Action array indicating which neurons to stimulate.
+        
+        Returns:
+            tuple: Observation, reward, terminated flag, truncated flag, and additional info.
+        """
+
+        spikes = self.simRun(action)
+
+        # Generate observation frames
         observation = self.GenFramesFromSpikes(spikes)
 
         # Calculate reward
@@ -197,8 +216,9 @@ class snnEnv(gymnasium.Env):
             rand_connect_neurons(self.excitatory_neurons, self.inhibitory_neurons, self.synapse_weight_factor, self.neuron_connection_probability, self.synapse_delay_time_length)
 
             if self.inhibitory_exist:
-                rand_connect_neurons(self.inhibitory_neurons, self.inhibitory_neurons, -self.synapse_weight_factor, self.neuron_connection_probability, self.synapse_delay_time_length)
-                rand_connect_neurons(self.inhibitory_neurons, self.excitatory_neurons, -self.synapse_weight_factor, self.neuron_connection_probability, self.synapse_delay_time_length)
+                if self.auto_ih:
+                    rand_connect_neurons(self.inhibitory_neurons, self.inhibitory_neurons, -self.synapse_weight_factor * self.ih_synapse_weight_factor, self.neuron_connection_probability, self.synapse_delay_time_length)
+                rand_connect_neurons(self.inhibitory_neurons, self.excitatory_neurons, -self.synapse_weight_factor * self.ih_synapse_weight_factor, self.neuron_connection_probability, self.synapse_delay_time_length)
             else:
                 rand_connect_neurons(self.inhibitory_neurons, self.inhibitory_neurons, self.synapse_weight_factor, self.neuron_connection_probability, self.synapse_delay_time_length)
                 rand_connect_neurons(self.inhibitory_neurons, self.excitatory_neurons, self.synapse_weight_factor, self.neuron_connection_probability, self.synapse_delay_time_length)
@@ -285,3 +305,6 @@ class snnEnv(gymnasium.Env):
             saved_filename = str(datetime.now()) + "_snn_network_data.pkl"
             with open(saved_filename, 'wb') as file:
                 pickle.dump(network_data, file)
+
+    def seed(self, seed):
+        np.random.seed(seed)

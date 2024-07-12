@@ -4,9 +4,10 @@ import imageio
 from tqdm import tqdm
 import pdb
 
+
 # Constants
-frame_size = 480
-neuron_diameter_pixels = 20  # Adjusted for scaling
+frame_size = 280
+neuron_diameter_pixels = 12  # Adjusted for scaling
 radius = neuron_diameter_pixels // 2
 gaussian_sigma = 1
 optical_depth_decay_factor = 0.01
@@ -44,7 +45,11 @@ def optical_properties(image, baseline_noise=5*10):
     depth_effect = np.exp(-optical_depth_decay_factor * noisy_image)
     brightness_factor = 2
     brightness_term = 50
-    return np.clip((noisy_image * depth_effect * brightness_factor)+brightness_term, 0, 255)
+
+
+    image = np.clip((noisy_image * depth_effect * brightness_factor)+brightness_term, 0, 255)
+    blurred_image = gaussian_filter(image, sigma=gaussian_sigma)
+    return blurred_image
 
 def create_synth_frames(data, positions, total_time, frame_rate=1):
     time_step = 1.0 / frame_rate

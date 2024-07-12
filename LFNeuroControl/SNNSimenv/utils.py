@@ -7,6 +7,8 @@ import os
 import json
 import pickle
 from datetime import datetime
+import matplotlib.pyplot as plt
+
 
 def rand_connect_neurons(source, target, weight_factor, connection_probability, delay):
     weight = nest.random.normal(mean=1.0, std=0.25) * weight_factor
@@ -42,3 +44,23 @@ def calculate_spike_rates(spike_data):
     # Calculate average spike rate for each neuron
     average_rates = {neuron: 1000 * spike_counts[neuron] / total_time for neuron in unique_neurons}
     return average_rates
+
+def graph_spikes(spike_data):
+    """
+    Creates a scatter plot of spikes from multiple neurons.
+
+    Parameters:
+    spike_data (dict): Dictionary with two keys:
+                       'senders' - np.array of neuron identifiers
+                       'times' - np.array of spike times corresponding to each sender
+    """
+    senders = spike_data['senders']
+    times = spike_data['times']
+
+    plt.figure(figsize=(10, 6))
+    plt.scatter(times, senders, alpha=0.6, edgecolors='none', s=10)
+    plt.xlabel('Time (s)')
+    plt.ylabel('Neuron ID')
+    plt.title('Spike Plot of Neurons')
+    plt.grid(True)
+    plt.savefig("")

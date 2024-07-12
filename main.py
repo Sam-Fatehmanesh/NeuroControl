@@ -1,10 +1,21 @@
 import numpy as np
 from LFNeuroControl.SNNSimenv.snnenv import snnEnv
 from LFNeuroControl.SNNSimenv.synthCI import create_video
+from datetime import datetime
+import torch
+import torch.nn as nn
+import nest
+from tianshou.env import SubprocVectorEnv
+from tianshou.policy import SACPolicy
+from tianshou.data import Collector, ReplayBuffer
+from tianshou.trainer import offpolicy_trainer
+from tianshou.utils.net.common import Net
+from tianshou.utils.net.continuous import ActorProb, Critic
 
 # SNN Parameters
+
 snn_params = {
-    "num_neurons": 64,
+    "num_neurons": 256,
     "inhibitory_exist": True,
     "fraction_inhibitory": 0.5,
     "step_action_observsation_simulation_time": 100.0,
@@ -18,12 +29,14 @@ snn_params = {
     "stimulator_synapse_weight": 1.3,
     "stimulation_time_resolution": 0.1,
     "num_recorded_neurons": 10,
-    "num_neurons_stimulated": int(0.2*64),
+    "num_neurons_stimulated": int(0.2*1024),
+    "ih_synapse_weight_factor": 1,
+    "auto_ih": True,
 }
 
 # RL Parameters
 rl_params = {
-    "steps_per_ep": 100,  # Total number of steps per episode
+    "steps_per_ep": 64,  # Total number of steps per episode
     "score_factor": 0.1   # Scoring factor for rewards
 }
 
@@ -46,7 +59,9 @@ neuron_params=neuron_params,
 rl_params=rl_params, 
 snn_filename=None)
 
-frames = env.step(np.ones((snn_params["num_neurons_stimulated"], int(env.step_action_observsation_simulation_time))))[0]
-# frames = [o * 255.0 for o in frames]
-#env.close()
-create_video(frames, filename='neuron_activity1.mp4', fps=1)
+# frames = env.step(np.zeros((snn_params["num_neurons_stimulated"], int(env.step_action_observsation_simulation_time))))[0]
+# # frames = [o * 255.0 for o in frames]
+# #env.close()
+# video_filename = str(datetime.now()) + "_neuron_activity.mp4"
+# create_video(frames, filename=video_filename, fps=1)
+
