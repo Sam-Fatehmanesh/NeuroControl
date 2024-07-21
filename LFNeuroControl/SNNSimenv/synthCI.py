@@ -63,7 +63,7 @@ def create_synth_frames(data, positions, total_time, frame_rate=1):
             if (i - radius) ** 2 + (j - radius) ** 2 <= radius ** 2:
                 structure[i, j] = 1
     #pdb.set_trace()
-    for i, time in tqdm(enumerate(data['times']), total=len(data['times'])):
+    for i, time in enumerate(data['times']):# tqdm(enumerate(data['times']), total=len(data['times'])):
         frame_index = int(time // time_step)
         if frame_index < num_frames:
             neuron_index = data['senders'][i]
@@ -96,11 +96,11 @@ def create_synth_frames(data, positions, total_time, frame_rate=1):
 
 
     # Apply optical properties
-    frames = [optical_properties(frame) for frame in tqdm(frames)]
-    return [np.clip(frame, 0, 255).astype(np.uint8) for frame in tqdm(frames)]
+    frames = [optical_properties(frame) for frame in (frames)]
+    return [np.clip(frame, 0, 255).astype(np.uint8) for frame in (frames)]
 
 def create_video(frames, filename='neuron_activity.mp4', fps=1):
     writer = imageio.get_writer(filename, fps=fps)
-    for frame in tqdm(frames):
+    for frame in (frames):
         writer.append_data(frame)
     writer.close()

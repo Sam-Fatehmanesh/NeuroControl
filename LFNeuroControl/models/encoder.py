@@ -9,12 +9,16 @@ class AbsolutePositionEncoding(nn.Module):
         self.d_model = d_model
         
         # Create a long enough P matrix
-        pe = torch.zeros(max_len, d_model)
+        pe = torch.zeros(int(max_len), int(d_model))
         position = torch.arange(0, max_len, dtype=torch.float).unsqueeze(1)
         div_term = torch.exp(torch.arange(0, d_model, 2).float() * (-np.log(10000.0) / d_model))
         
         pe[:, 0::2] = torch.sin(position * div_term)
-        pe[:, 1::2] = torch.cos(position * div_term)
+        if d_model % 2 == 1:
+            # Handle the case when d_model is odd
+            pe[:, 1::2] = torch.cos(position * div_term[:-1])
+        else:
+            pe[:, 1::2] = torch.cos(position * div_term)
         
         pe = pe.unsqueeze(0).transpose(0, 1)
         self.register_buffer('pe', pe)
@@ -22,6 +26,7 @@ class AbsolutePositionEncoding(nn.Module):
     def forward(self, x):
         x = x + self.pe[:x.size(0), :]
         return x
+
 
 class SpikePositionEncoding(nn.Module):
     def __init__(self, d_model, max_len=5000):

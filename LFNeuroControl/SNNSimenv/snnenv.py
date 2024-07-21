@@ -38,13 +38,13 @@ class snnEnv(gymnasium.Env):
 
         # Reset and configure the NEST kernel
         #nest.local_num_threads = 16
-        nest.ResetKernel()
-        nest.SetKernelStatus({
-            "resolution": self.snn_params["stimulation_time_resolution"], 
-            "print_time": True,
-            "min_delay": 0.1,  # Adjust as necessary
-            "max_delay": 20.0,  # Adjust as necessary
-        })
+        # nest.ResetKernel()
+        # nest.SetKernelStatus({
+        #     "resolution": self.snn_params["stimulation_time_resolution"], 
+        #     "print_time": True,
+        #     "min_delay": 0.1,  # Adjust as necessary
+        #     "max_delay": 20.0,  # Adjust as necessary
+        # })
 
         # Parameters for the network
         self.num_neurons = snn_params["num_neurons"]  # Number of neurons in SNN simulation
@@ -87,7 +87,10 @@ class snnEnv(gymnasium.Env):
         self.observation_space = spaces.Box(low=0.0, high=1.0, shape=(int(int(self.step_action_observsation_simulation_time * frame_camera_factor)), self.image_m, self.image_n))
         self.action_space = spaces.MultiBinary(self.num_neurons_stimulated * self.step_action_observsation_simulation_time)
 
-        self.tempthing = self.reset()
+        # Generate random 2D positions for neurons
+        self.neuron_2d_pos = np.random.rand(self.num_neurons, 2)
+        self.first_reset = True
+        self.firstobs, _ = self.reset()
 
     def score(self, true_spikes, target=None):
         """
@@ -129,7 +132,7 @@ class snnEnv(gymnasium.Env):
         ms_per_frame = int(1000/self.camera_fps)
         return observation[::ms_per_frame]
 
-    def simRun(self, spikeinputs=None):
+    def simRun(self, spikeinputs):
         """
         Runs snn simulation for time defined by self.step_action_observsation_simulation_time
         
@@ -143,10 +146,10 @@ class snnEnv(gymnasium.Env):
         self.current_step += 1
         self.current_time_step = self.current_step * self.step_action_observsation_simulation_time
 
-        if spikeinputs:
+        if spikeinputs.any():
             # Stimulate neurons based on the action
             for i, neuron_id in list(enumerate(self.neurons))[:self.num_neurons_stimulated]:
-                stimulation_times = np.array(np.where(action[i] > 0)[0] + 1, dtype=float)
+                stimulation_times = np.array(np.where(spikeinputs[i] > 0)[0] + 1, dtype=float)
                 times = stimulation_times + self.current_time_step
                 if len(times) > 0:
                     stim_gen = nest.Create("spike_generator", params={"spike_times": times})
@@ -193,7 +196,7 @@ class snnEnv(gymnasium.Env):
 
         #Since 
 
-        return observation, reward, terminated, False, None
+        return observation, reward, terminated, False
 
     def reset(self):
         """
@@ -202,60 +205,62 @@ class snnEnv(gymnasium.Env):
         Returns:
             np.ndarray: Initial observation.
         """
-        self.current_time_step = 0
-        self.current_step = 0
 
-        # Create noise and recording devices
-        self.noise = nest.Create("poisson_generator", params={"rate": self.noise_rate})
-        self.multimeter = nest.Create("multimeter", params={"record_from": ["V_m"]})
-        self.spike_recorder = nest.Create("spike_recorder")
+        if self.first_reset:
+            self.current_time_step = 0
+            self.current_step = 0
 
-        if self.snn_filename is None:
-            # Randomly connect neurons if no file is provided
-            rand_connect_neurons(self.excitatory_neurons, self.excitatory_neurons, self.synapse_weight_factor, self.neuron_connection_probability, self.synapse_delay_time_length)
-            rand_connect_neurons(self.excitatory_neurons, self.inhibitory_neurons, self.synapse_weight_factor, self.neuron_connection_probability, self.synapse_delay_time_length)
+            # Create noise and recording devices
+            self.noise = nest.Create("poisson_generator", params={"rate": self.noise_rate})
+            self.multimeter = nest.Create("multimeter", params={"record_from": ["V_m"]})
+            self.spike_recorder = nest.Create("spike_recorder")
 
-            if self.inhibitory_exist:
-                if self.auto_ih:
-                    rand_connect_neurons(self.inhibitory_neurons, self.inhibitory_neurons, -self.synapse_weight_factor * self.ih_synapse_weight_factor, self.neuron_connection_probability, self.synapse_delay_time_length)
-                rand_connect_neurons(self.inhibitory_neurons, self.excitatory_neurons, -self.synapse_weight_factor * self.ih_synapse_weight_factor, self.neuron_connection_probability, self.synapse_delay_time_length)
-            else:
-                rand_connect_neurons(self.inhibitory_neurons, self.inhibitory_neurons, self.synapse_weight_factor, self.neuron_connection_probability, self.synapse_delay_time_length)
-                rand_connect_neurons(self.inhibitory_neurons, self.excitatory_neurons, self.synapse_weight_factor, self.neuron_connection_probability, self.synapse_delay_time_length)
+            if self.snn_filename is None:
+                self.first_reset = False
+                # Randomly connect neurons if no file is provided
+                rand_connect_neurons(self.excitatory_neurons, self.excitatory_neurons, self.synapse_weight_factor, self.neuron_connection_probability, self.synapse_delay_time_length)
+                rand_connect_neurons(self.excitatory_neurons, self.inhibitory_neurons, self.synapse_weight_factor, self.neuron_connection_probability, self.synapse_delay_time_length)
 
-            # Generate random 2D positions for neurons
-            self.neuron_2d_pos = np.random.rand(self.num_neurons, 2)
+                if self.inhibitory_exist:
+                    if self.auto_ih:
+                        rand_connect_neurons(self.inhibitory_neurons, self.inhibitory_neurons, -self.synapse_weight_factor * self.ih_synapse_weight_factor, self.neuron_connection_probability, self.synapse_delay_time_length)
+                    rand_connect_neurons(self.inhibitory_neurons, self.excitatory_neurons, -self.synapse_weight_factor * self.ih_synapse_weight_factor, self.neuron_connection_probability, self.synapse_delay_time_length)
+                else:
+                    rand_connect_neurons(self.inhibitory_neurons, self.inhibitory_neurons, self.synapse_weight_factor, self.neuron_connection_probability, self.synapse_delay_time_length)
+                    rand_connect_neurons(self.inhibitory_neurons, self.excitatory_neurons, self.synapse_weight_factor, self.neuron_connection_probability, self.synapse_delay_time_length)
 
-            # Connect noise generator to neurons
-            nest.Connect(self.noise, self.excitatory_neurons + self.inhibitory_neurons, syn_spec={"delay": self.synapse_delay_time_length, "weight": self.noise_weight})
 
-            # Connect recording devices to neurons
-            nest.Connect(self.multimeter, self.excitatory_neurons + self.inhibitory_neurons)
-            nest.Connect(self.excitatory_neurons + self.inhibitory_neurons, self.spike_recorder)
 
-        else:
-            # Load network topology from a pickle file
-            with open(self.snn_filename, 'rb') as file:
-                network_data, self.neuron_2d_pos = pickle.load(file)
-            
-            # Load and set neuron properties
-            for neuron_id, props in network_data['neurons'].items():
-                nest.SetStatus(self.neurons[neuron_id-1], props)
+                # Connect noise generator to neurons
+                nest.Connect(self.noise, self.excitatory_neurons + self.inhibitory_neurons, syn_spec={"delay": self.synapse_delay_time_length, "weight": self.noise_weight})
 
-            # Apply loaded synaptic weights and connections
-            for conn_data in network_data['connections']:
-                pre_node = conn_data['source']
-                post_node = conn_data['target']
-                weight = conn_data['weight']
-                delay = conn_data['delay']
+                # Connect recording devices to neurons
+                nest.Connect(self.multimeter, self.excitatory_neurons + self.inhibitory_neurons)
+                nest.Connect(self.excitatory_neurons + self.inhibitory_neurons, self.spike_recorder)
 
-                # Establish connections with the loaded properties
-                number_of_nodes = len(nest.GetNodes()[0])
-                if pre_node <= number_of_nodes and post_node <= number_of_nodes:
-                    nest.Connect([pre_node], [post_node], syn_spec={'weight': weight, 'delay': delay})
-            
-            # Connect recording devices to neurons
-            nest.Connect(self.excitatory_neurons + self.inhibitory_neurons, self.spike_recorder)
+            else :
+                # Load network topology from a pickle file
+                with open(self.snn_filename, 'rb') as file:
+                    network_data, self.neuron_2d_pos = pickle.load(file)
+                
+                # Load and set neuron properties
+                for neuron_id, props in network_data['neurons'].items():
+                    nest.SetStatus(self.neurons[neuron_id-1], props)
+
+                # Apply loaded synaptic weights and connections
+                for conn_data in network_data['connections']:
+                    pre_node = conn_data['source']
+                    post_node = conn_data['target']
+                    weight = conn_data['weight']
+                    delay = conn_data['delay']
+
+                    # Establish connections with the loaded properties
+                    number_of_nodes = len(nest.GetNodes()[0])
+                    if pre_node <= number_of_nodes and post_node <= number_of_nodes:
+                        nest.Connect([pre_node], [post_node], syn_spec={'weight': weight, 'delay': delay})
+                
+                # Connect recording devices to neurons
+                nest.Connect(self.excitatory_neurons + self.inhibitory_neurons, self.spike_recorder)
 
         # Simulate initial state
         nest.Simulate(self.step_action_observsation_simulation_time)
@@ -264,7 +269,7 @@ class snnEnv(gymnasium.Env):
         # Generate initial observation
         observation = self.GenFramesFromSpikes(spikes)
 
-        return observation
+        return observation, None
 
     def close(self):
         """
