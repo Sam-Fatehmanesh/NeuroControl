@@ -40,12 +40,19 @@ class WorldModelT(nn.Module):
 
         self.decoder_transformer = Transformer(latent_size, latent_size, heads=8, ff_dim=latent_size*2, out_dim=pixles_num, layer_num=4)
         # Uses deconvolutions to generate an image
+        # self.decoder_DCNN = nn.Sequential(
+        #     DeCNNLayer(1, 32, cnn_kernel_size),
+        #     DeCNNLayer(32, 128, cnn_kernel_size),
+        #     DeCNNLayer(128, 64, cnn_kernel_size),
+        #     DeCNNLayer(64, 8, cnn_kernel_size),
+        #     DeCNNLayer(8, 1, cnn_kernel_size),
+        # )
         self.decoder_DCNN = nn.Sequential(
-            DeCNNLayer(1, 32, cnn_kernel_size),
-            DeCNNLayer(32, 128, cnn_kernel_size),
-            DeCNNLayer(128, 64, cnn_kernel_size),
-            DeCNNLayer(64, 8, cnn_kernel_size),
-            DeCNNLayer(8, 1, cnn_kernel_size),
+            CNNLayer(1, 32, cnn_kernel_size),
+            CNNLayer(32, 128, cnn_kernel_size),
+            CNNLayer(128, 64, cnn_kernel_size),
+            CNNLayer(64, 8, cnn_kernel_size),
+            CNNLayer(8, 1, cnn_kernel_size),
         )
 
 
@@ -70,6 +77,7 @@ class WorldModelT(nn.Module):
 
 
         imglat = self.decoder_transformer(zt)
+        #pdb.set_trace()
 
         #pdb.set_trace()
         imglat = imglat.view(batch_dim, 1, image_n, image_n)

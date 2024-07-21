@@ -10,6 +10,8 @@ from datetime import datetime
 from LFNeuroControl.SNNSimenv.synthCI import create_synth_frames, group_spikes_camera_fps_adjust
 from LFNeuroControl.SNNSimenv.utils import *
 import pdb
+import cv2
+from datetime import datetime
 
 
 
@@ -112,7 +114,7 @@ class snnEnv(gymnasium.Env):
         score = np.sum((self.score_factor * (list(avg_rates.values())[-number_scored_neurons:] - desired_rates))**2)
         return score
 
-    def GenFramesFromSpikes(self, spikes):
+    def GenFramesFromSpikes(self, spikes, total_sim_steps = None):
         """
         Generate observation frames from spike data.
         
@@ -122,10 +124,13 @@ class snnEnv(gymnasium.Env):
         Returns:
             list: List of observation frames normalized between 0 and 1.
         """
+        if total_sim_steps == None:
+            total_sim_steps = self.step_action_observsation_simulation_time
+
         # Adjust spikes for camera FPS and generate frames
         camera_sim_adjusted_spikes = group_spikes_camera_fps_adjust(spikes, self.camera_fps)
         #pdb.set_trace()
-        observation = create_synth_frames(camera_sim_adjusted_spikes, self.neuron_2d_pos, self.step_action_observsation_simulation_time)
+        observation = create_synth_frames(camera_sim_adjusted_spikes, self.neuron_2d_pos, total_sim_steps)
         #observation = [np.clip(o, 0, 255).astype(np.uint8) for o in observation]
         if self.camera_fps > 999:
             return observation
@@ -158,13 +163,17 @@ class snnEnv(gymnasium.Env):
         # Simulate the network
         nest.Simulate(self.step_action_observsation_simulation_time)
 
+        spikes = self.getObsSpikes(self.step_action_observsation_simulation_time)
+
+        return spikes
+
+    def getObsSpikes(self, last_sim_steps):
         # Get spike events
         spikes = nest.GetStatus(self.spike_recorder, "events")[0]
 
         # Get the last set of spike events within the time window
         max_time = spikes['times'].max()
-        time_window = self.step_action_observsation_simulation_time
-        indices = np.where(spikes['times'] >= (max_time - time_window))
+        indices = np.where(spikes['times'] >= (max_time - last_sim_steps))
 
         # The minimum is subtracted to make frame index within observation length range
         spikes['times'][indices] -= np.min(spikes['times'][indices])
@@ -192,7 +201,9 @@ class snnEnv(gymnasium.Env):
         # Calculate reward
         reward = self.score(spikes)
         terminated = self.current_step >= self.steps_per_ep
-
+        
+        #!!!!!!!!!!!!!!!! temp thing rn
+        terminated = False
 
         #Since 
 
@@ -206,9 +217,11 @@ class snnEnv(gymnasium.Env):
             np.ndarray: Initial observation.
         """
 
+        self.current_time_step = 0
+        self.current_step = 0
+
         if self.first_reset:
-            self.current_time_step = 0
-            self.current_step = 0
+            
 
             # Create noise and recording devices
             self.noise = nest.Create("poisson_generator", params={"rate": self.noise_rate})
@@ -313,3 +326,44 @@ class snnEnv(gymnasium.Env):
 
     def seed(self, seed):
         np.random.seed(seed)
+
+    def render(self, past_sim_steps_n, save_dir="renders/", fps=1.0):
+        # Check if a folder called renders exists if not create it
+        if save_dir == "renders/":
+            if not os.path.exists(save_dir):
+                os.makedirs(save_dir)
+            
+
+        spikes = self.getObsSpikes(past_sim_steps_n)
+        # pdb.set_trace()
+        # Generate frames from spikes
+        frames = self.GenFramesFromSpikes(spikes, total_sim_steps=past_sim_steps_n)
+        # convert numpy of frames into a list of frames
+        frames = [frame for frame in frames]
+        # print("######")
+        # print(len(frames))
+        # print(past_sim_steps_n)
+
+        fourcc = cv2.VideoWriter_fourcc(*'mp4v')
+        frame_size = (280, 280)  # Assuming the frames are square with edge length `image_n`
+        filename = save_dir + "true_simulation.mp4"
+        out = cv2.VideoWriter(filename, fourcc, fps, frame_size)
+
+        # Write each frame to the video
+        for frame in frames:
+            # Convert the frame from floating-point to 8-bit unsigned integer
+            frame = frame.squeeze()  # Remove singleton dimensions if any
+            frame = np.clip(frame, 0, 255).astype(np.uint8)
+
+            if frame.ndim == 2:
+                # If the frame is grayscale, convert it to BGR
+                frame = cv2.cvtColor(frame, cv2.COLOR_GRAY2BGR)
+
+            # Write the frame to the video
+            out.write(frame)
+
+        # Release the VideoWriter object
+        out.release()
+
+
+
