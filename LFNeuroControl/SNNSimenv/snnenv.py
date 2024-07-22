@@ -284,7 +284,7 @@ class snnEnv(gymnasium.Env):
 
         return observation, None
 
-    def close(self):
+    def close(self, dirprefix = None):
         """
         Close the environment and save the network state if necessary.
         """
@@ -320,7 +320,10 @@ class snnEnv(gymnasium.Env):
             network_data = (network_data, self.neuron_2d_pos)
 
             # Save the network data to a pickle file
-            saved_filename = str(datetime.now()) + "_snn_network_data.pkl"
+            if dirprefix is None:
+                dirprefix = str(datetime.now()) +"_"
+
+            saved_filename = dirprefix + "snn_network_data.pkl"
             with open(saved_filename, 'wb') as file:
                 pickle.dump(network_data, file)
 

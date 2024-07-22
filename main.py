@@ -1,7 +1,7 @@
 import numpy as np
 from LFNeuroControl.SNNSimenv.snnenv import snnEnv
 from LFNeuroControl.SNNSimenv.synthCI import create_video
-from LFNeuroControl.models.world import WorldModelT
+from LFNeuroControl.models.world import WorldModelT, WorldModelNO
 
 from datetime import datetime
 import torch
@@ -13,6 +13,7 @@ import cv2
 import pdb
 import os
 from matplotlib import pyplot as plt
+import csv
 
 # Checks if a folder called experiments exists if not it makes it
 if not os.path.exists('experiments'):
@@ -92,14 +93,14 @@ latent_size = 256
 state_size = 256
 
 # World Model
-world_model = WorldModelT(image_n, num_frames_per_step, latent_size, state_size).to(device)
+world_model = WorldModelNO(image_n, num_frames_per_step, latent_size, state_size).to(device)
 
 # Loss function and optimizer
 criterion = nn.MSELoss().to(device)
 optimizer = optim.Adam(world_model.parameters(), lr=0.00001)
 
 losses = []
-num_episodes = 2048
+num_episodes = 512
 
 # Saves a text file with the str of the model and the saved parameter dictionaries
 with open(folder_name + 'params.txt', 'w') as f:
@@ -174,9 +175,19 @@ with tqdm(total=num_episodes, desc="Episodes") as pbar:
 
         losses.append(total_loss.item())
 
+        torch.cuda.empty_cache()
+
         pbar.set_postfix({"Loss": total_loss.item()})
         pbar.update(1)
+
         #print(f"Episode {episode + 1}, Total Loss: {total_loss.item()}")
+
+# Save the model
+checkpoint = {
+    'model_state_dict': world_model.state_dict(),
+    'optimizer_state_dict': optimizer.state_dict()
+}
+torch.save(checkpoint, folder_name+"checkpoint.pth")
 
 # Runs one episode of the same number of steps and then saves a video of the 
 # true observations by running env.render() and saves a video of what the model predicted
@@ -268,3 +279,18 @@ plt.ylabel("Loss")
 plt.title("Loss over Time")
 plt.savefig(folder_name + "loss_graph.png")
 plt.close()
+
+# Saves a csv of the loss over time with each row of the csv being a differnt training episode
+# losses is a 1D list of losses for each episode
+episode_index = [str(i) for i in range(num_episodes)]
+losses_str = [str(loss) for loss in losses]
+
+with open(folder_name + "losses.csv", "w") as f:
+    writer = csv.writer(f)
+    # Writes the header
+    writer.writerow(["Episode", "Loss"])
+    # Writes each episode and its corresponding loss in a separate row
+    for idx, loss in zip(episode_index, losses_str):
+        writer.writerow([idx, loss])
+
+env.close(dirprefix=folder_name)
