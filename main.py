@@ -99,8 +99,10 @@ probabilityOfSpikeAction = 0.8
 
 # World Model
 #world_model = WorldModelT(image_n, num_frames_per_step, latent_size, state_size, action_size).to(device)
-world_model = WorldModelNO(image_n, num_frames_per_step, latent_size, state_size, action_size).to(device)
+#world_model = WorldModelNO(image_n, num_frames_per_step, latent_size, state_size, action_size).to(device)
 #world_model = WorldModelMoE(image_n, num_frames_per_step, latent_size, state_size, action_size).to(device)
+#world_model = WorldModelMoENO(image_n, num_frames_per_step, latent_size, state_size, action_size).to(device)
+world_model = WorldModelNOR(image_n, num_frames_per_step, latent_size, state_size, action_size).to(device)
 
 # Loss function and optimizer
 criterion = nn.MSELoss().to(device)
@@ -325,3 +327,5 @@ plt.xlabel("Step")
 plt.ylabel("Time (s)")
 plt.title("Simulation Step Speed over Time")
 plt.savefig(folder_name + "sim_step_speed_graph.png")
+
+print(folder_name)
