@@ -1,7 +1,7 @@
 import numpy as np
-from LFNeuroControl.SNNSimenv.snnenv import snnEnv
-from LFNeuroControl.SNNSimenv.synthCI import create_video
-from LFNeuroControl.models.world import *#WorldModelT, WorldModelNO
+from NeuroControl.SNNSimenv.snnenv import snnEnv
+from NeuroControl.SNNSimenv.synthCI import create_video
+from NeuroControl.models.world import *#WorldModelT, WorldModelNO
 
 from datetime import datetime
 import torch
@@ -14,6 +14,7 @@ import pdb
 import os
 from matplotlib import pyplot as plt
 import csv
+import time
 
 # Checks if a folder called experiments exists if not it makes it
 if not os.path.exists('experiments'):
@@ -83,7 +84,8 @@ torch.manual_seed(seed)
 env = snnEnv(snn_params=snn_params, 
 neuron_params=neuron_params, 
 rl_params=rl_params, 
-snn_filename=None)
+snn_filename=None,
+apply_optical_error=False)
 #env.step(np.ones((snn_params["num_neurons_stimulated"], int(env.step_action_observsation_simulation_time))))
 
 action_size = int(snn_params["num_neurons_stimulated"] * env.step_action_observsation_simulation_time)
@@ -97,15 +99,15 @@ probabilityOfSpikeAction = 0.8
 
 # World Model
 #world_model = WorldModelT(image_n, num_frames_per_step, latent_size, state_size, action_size).to(device)
-#world_model = WorldModelNO(image_n, num_frames_per_step, latent_size, state_size, action_size).to(device)
-world_model = WorldModelMoE(image_n, num_frames_per_step, latent_size, state_size, action_size).to(device)
+world_model = WorldModelNO(image_n, num_frames_per_step, latent_size, state_size, action_size).to(device)
+#world_model = WorldModelMoE(image_n, num_frames_per_step, latent_size, state_size, action_size).to(device)
 
 # Loss function and optimizer
 criterion = nn.MSELoss().to(device)
-optimizer = optim.Adam(world_model.parameters(), lr=0.001)
+optimizer = optim.Adam(world_model.parameters(), lr=0.0001)
 
 losses = []
-num_episodes = 1024
+num_episodes = 1024*4
 
 # Saves a text file with the str of the model and the saved parameter dictionaries
 with open(folder_name + 'params.txt', 'w') as f:
@@ -126,6 +128,8 @@ with open(folder_name + 'params.txt', 'w') as f:
     f.write("num_episodes")
     f.write(str(num_episodes))
 
+# collects and graphs sim step speed times
+sim_step_speed_times =[]
 
 # This prediction system will use backprop through time with one update step per episode
 # Training loop
@@ -145,6 +149,7 @@ with tqdm(total=num_episodes, desc="Episodes") as pbar:
 
 
         for step in tqdm(range(rl_params["steps_per_ep"]), leave=False):
+            t1 = time.time()
             # Select action
             #action = np.zeros((snn_params["num_neurons_stimulated"], int(env.step_action_observsation_simulation_time))) #env.action_space.sample()
             action = np.random.uniform(0.0, 1.0, (snn_params["num_neurons_stimulated"], int(env.step_action_observsation_simulation_time))) < probabilityOfSpikeAction
@@ -174,6 +179,10 @@ with tqdm(total=num_episodes, desc="Episodes") as pbar:
 
             prev_obs = true_obs
 
+            t2 = time.time()
+
+            sim_step_speed_times.append(t2-t1)
+
 
             if done:
                 break
@@ -184,7 +193,7 @@ with tqdm(total=num_episodes, desc="Episodes") as pbar:
 
         losses.append(total_loss.item())
 
-        torch.cuda.empty_cache()
+        #torch.cuda.empty_cache()
 
         pbar.set_postfix({"Loss": total_loss.item()})
         pbar.update(1)
@@ -269,6 +278,8 @@ for frame in predictions:
     frame *= 255.0
     # Convert the frame from floating-point to 8-bit unsigned integer
     frame = frame.squeeze()  # Remove singleton dimensions if any
+    #pdb.set_trace()
+    #print(frame)
     frame = np.clip(frame, 0, 255).astype(np.uint8)
 
     if frame.ndim == 2:
@@ -306,3 +317,11 @@ with open(folder_name + "losses.csv", "w") as f:
         writer.writerow([idx, loss])
 
 env.close(dirprefix=folder_name)
+
+
+# Graphs sim_step_speed_times
+plt.plot(sim_step_speed_times)
+plt.xlabel("Step")
+plt.ylabel("Time (s)")
+plt.title("Simulation Step Speed over Time")
+plt.savefig(folder_name + "sim_step_speed_graph.png")

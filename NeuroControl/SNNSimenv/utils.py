@@ -71,3 +71,4 @@ def graph_spikes(spike_data, save_dir="spikes.jpeg"):
     plt.title('Spike Plot of Neurons')
     plt.grid(True)
     plt.savefig(save_dir)
+    plt.close()

@@ -2,12 +2,12 @@ import torch
 import torch.nn as nn
 import torch.nn.functional as F
 import numpy as np
-from LFNeuroControl.models.neuraloperator import FNOPredictor
-from LFNeuroControl.models.transcnn import TransCNN
-from LFNeuroControl.models.cnn import CNNLayer, DeCNNLayer
-from LFNeuroControl.models.transformer import Transformer
-from LFNeuroControl.models.encoder import SpikePositionEncoding
-from LFNeuroControl.models.moe import MoEPredictor
+from NeuroControl.models.neuraloperator import FNOPredictor
+from NeuroControl.models.transcnn import TransCNN
+from NeuroControl.models.cnn import CNNLayer, DeCNNLayer
+from NeuroControl.models.transformer import Transformer
+from NeuroControl.models.encoder import SpikePositionEncoding
+from NeuroControl.models.moe import MoEPredictor
 import pdb
 import csv
 from soft_moe_pytorch import SoftMoE, DynamicSlotsSoftMoE
@@ -144,7 +144,10 @@ class WorldModelNO(nn.Module):
 
         # Latent Representation Transformer
         #self.lr_transformer = Transformer(self.per_image_dim, latent_size, heads=8, ff_dim=latent_size*2, out_dim=latent_size, layer_num=8)
-        self.lr_NO = FNOPredictor(self.transformer_in_dim, latent_size, out_dim=latent_size, no_layers=no_layers)
+        self.image_NO = FNOPredictor(self.predim, latent_size, out_dim=latent_size, no_layers=no_layers)
+        self.state_NO = FNOPredictor(state_size, latent_size, out_dim=latent_size, no_layers=no_layers)
+        self.action_NO = FNOPredictor(action_dim, latent_size, out_dim=latent_size, no_layers=no_layers)
+        self.lr_NO = FNOPredictor(latent_size, latent_size, out_dim=latent_size, no_layers=no_layers)
         
         #self.decoder_transformer = Transformer(latent_size, latent_size, heads=8, ff_dim=latent_size*2, out_dim=pixles_num, layer_num=4)
         self.decoder_NO = FNOPredictor(latent_size, latent_size, out_dim=pixles_num * num_frames_per_step)
@@ -176,11 +179,17 @@ class WorldModelNO(nn.Module):
         
         state_t = (state_t).view(1,1,1,self.state_size)
         action_t = self.action_flat(action_t).view(1,1,1,self.action_dim)
-        obs_action_state_cat = torch.cat((xt, state_t, action_t), dim=3)
-        
+        #obs_action_state_cat = torch.cat((xt, state_t, action_t), dim=3)
+        state_t = self.state_NO(state_t)
+        action_t = self.action_NO(action_t)
+        xt = self.image_NO(xt)
+
+        obs_action_state = xt + state_t + action_t
+        #pdb.set_trace()
+
        # xt = xt.view(1,1,1,self.predim)
         #pdb.set_trace()
-        zt = self.lr_NO(obs_action_state_cat)
+        zt = self.lr_NO(obs_action_state)
         state_t = self.state_encoder(zt)
         
         #pdb.set_trace()

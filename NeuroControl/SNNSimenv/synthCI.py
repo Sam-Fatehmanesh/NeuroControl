@@ -52,7 +52,7 @@ def optical_properties(image, baseline_noise=5):
     blurred_image = gaussian_filter(image, sigma=gaussian_sigma)
     return blurred_image
 
-def create_synth_frames(data, positions, total_time, frame_rate=1):
+def create_synth_frames(data, positions, total_time, frame_rate=1, apply_distortions=True):
     time_step = 1.0 / frame_rate
     num_frames = int(total_time * frame_rate)
     frames = [np.zeros((frame_size, frame_size)) for _ in range(num_frames)]
@@ -97,7 +97,8 @@ def create_synth_frames(data, positions, total_time, frame_rate=1):
 
 
     # Apply optical properties
-    frames = [optical_properties(frame) for frame in (frames)]
+    if apply_distortions:
+        frames = [optical_properties(frame) for frame in (frames)]
     return [np.clip(frame, 0, 255).astype(np.uint8) for frame in (frames)]
 
 def create_video(frames, filename='neuron_activity.mp4', fps=1):

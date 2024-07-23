@@ -1,8 +1,8 @@
 import numpy as np
-from LFNeuroControl.SNNSimenv.snnenv import snnEnv
-from LFNeuroControl.SNNSimenv.synthCI import create_video
-from LFNeuroControl.models.actor import NeuronControlActor
-from LFNeuroControl.models.critic import NeuralControlCritic
+from NeuroControl.SNNSimenv.snnenv import snnEnv
+from NeuroControl.SNNSimenv.synthCI import create_video
+from NeuroControl.models.actor import NeuronControlActor
+from NeuroControl.models.critic import NeuralControlCritic
 
 from datetime import datetime
 import torch

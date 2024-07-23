@@ -1,6 +1,6 @@
 import numpy as np
-from LFNeuroControl.SNNSimenv.snnenv import snnEnv
-from LFNeuroControl.SNNSimenv.synthCI import create_video
+from NeuroControl.SNNSimenv.snnenv import snnEnv
+from NeuroControl.SNNSimenv.synthCI import create_video
 from datetime import datetime
 import time
 import os

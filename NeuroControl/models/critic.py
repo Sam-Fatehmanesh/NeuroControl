@@ -2,9 +2,9 @@ import torch
 import torch.nn as nn
 import torch.nn.functional as F
 import numpy as np
-from LFNeuroControl.models.transcnn import TransCNN
-from LFNeuroControl.models.transformer import Transformer
-from LFNeuroControl.models.encoder import SpikePositionEncoding
+from NeuroControl.models.transcnn import TransCNN
+from NeuroControl.models.transformer import Transformer
+from NeuroControl.models.encoder import SpikePositionEncoding
 
 
 class NeuralControlCritic(nn.Module):

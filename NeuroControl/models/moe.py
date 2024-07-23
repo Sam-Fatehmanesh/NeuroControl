@@ -3,7 +3,7 @@ import torch
 import torch.nn as nn
 import torch.nn.functional as F
 import numpy as np
-from LFNeuroControl.models.mlp import MLP
+from NeuroControl.models.mlp import MLP
 import pdb
 
 

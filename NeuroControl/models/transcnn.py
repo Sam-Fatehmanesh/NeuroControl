@@ -1,7 +1,7 @@
 import torch
 from torch import nn
-from LFNeuroControl.models.cnn import CNNLayer
-from LFNeuroControl.models.transformer import Transformer
+from NeuroControl.models.cnn import CNNLayer
+from NeuroControl.models.transformer import Transformer
 
 class TransCNN(nn.Module):
     def __init__(self, num_input_frames, image_n, dim, out_dim, num_trans_layers, cnn_kernel_size=3):
