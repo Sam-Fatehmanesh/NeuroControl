@@ -1,7 +1,7 @@
 import numpy as np
 from LFNeuroControl.SNNSimenv.snnenv import snnEnv
 from LFNeuroControl.SNNSimenv.synthCI import create_video
-from LFNeuroControl.models.world import WorldModelT, WorldModelNO
+from LFNeuroControl.models.world import *#WorldModelT, WorldModelNO
 
 from datetime import datetime
 import torch
@@ -35,13 +35,13 @@ rl_params = {
 }
 
 # SNN Parameters
-
+num_neurons = 16
 snn_params = {
-    "num_neurons": 16,
+    "num_neurons": num_neurons,
     "inhibitory_exist": True,
     "fraction_inhibitory": 0.5,
     "step_action_observsation_simulation_time": 8,
-    "noise_rate": 800,
+    "noise_rate": 0,
     "neuron_connection_probability": 0.2,
     "synapse_delay_time_length": 1.0,
     "synapse_weight_factor": 1,
@@ -51,7 +51,7 @@ snn_params = {
     "stimulator_synapse_weight": 1.3,
     "stimulation_time_resolution": 0.1,
     "num_recorded_neurons": 10,
-    "num_neurons_stimulated": int(0.2*1024),
+    "num_neurons_stimulated": int(0.2*num_neurons),
     "ih_synapse_weight_factor": 1,
     "auto_ih": True,
 }
@@ -86,21 +86,26 @@ rl_params=rl_params,
 snn_filename=None)
 #env.step(np.ones((snn_params["num_neurons_stimulated"], int(env.step_action_observsation_simulation_time))))
 
+action_size = int(snn_params["num_neurons_stimulated"] * env.step_action_observsation_simulation_time)
 
 image_n = 280
 num_frames_per_step = snn_params["step_action_observsation_simulation_time"]
-latent_size = 256
+latent_size = int(24**2)
 state_size = 256
 
+probabilityOfSpikeAction = 0.8
+
 # World Model
-world_model = WorldModelNO(image_n, num_frames_per_step, latent_size, state_size).to(device)
+#world_model = WorldModelT(image_n, num_frames_per_step, latent_size, state_size, action_size).to(device)
+#world_model = WorldModelNO(image_n, num_frames_per_step, latent_size, state_size, action_size).to(device)
+world_model = WorldModelMoE(image_n, num_frames_per_step, latent_size, state_size, action_size).to(device)
 
 # Loss function and optimizer
 criterion = nn.MSELoss().to(device)
-optimizer = optim.Adam(world_model.parameters(), lr=0.00001)
+optimizer = optim.Adam(world_model.parameters(), lr=0.001)
 
 losses = []
-num_episodes = 512
+num_episodes = 1024
 
 # Saves a text file with the str of the model and the saved parameter dictionaries
 with open(folder_name + 'params.txt', 'w') as f:
@@ -131,7 +136,9 @@ with tqdm(total=num_episodes, desc="Episodes") as pbar:
         total_loss = torch.zeros((1)).to(device)
         # Convert state to tensor
         #print(first_obs)
-        first_obs = torch.tensor(first_obs, dtype=torch.float32).unsqueeze(0).to(device)  / 255.0
+        first_obs = np.array(first_obs, dtype=np.float32)  # Convert list of numpy ndarrays to a single numpy ndarray
+        first_obs = torch.tensor(first_obs).unsqueeze(0).to(device) / 255.0
+        
         prev_obs = first_obs
 
         model_state = torch.zeros(state_size).to(device)
@@ -139,13 +146,15 @@ with tqdm(total=num_episodes, desc="Episodes") as pbar:
 
         for step in tqdm(range(rl_params["steps_per_ep"]), leave=False):
             # Select action
-            action = np.zeros((snn_params["num_neurons_stimulated"], int(env.step_action_observsation_simulation_time))) #env.action_space.sample()
-            
+            #action = np.zeros((snn_params["num_neurons_stimulated"], int(env.step_action_observsation_simulation_time))) #env.action_space.sample()
+            action = np.random.uniform(0.0, 1.0, (snn_params["num_neurons_stimulated"], int(env.step_action_observsation_simulation_time))) < probabilityOfSpikeAction
+            actiontensor = torch.tensor(action, dtype=torch.float32).to(device)
+            # action equals a 2d binary matrix where
             
             # Forward pass
             prev_obs = torch.transpose(prev_obs, 0, 1)
             
-            predicted_obs, model_state = world_model(prev_obs, model_state)
+            predicted_obs, model_state = world_model(prev_obs, actiontensor, model_state)
         
 
 
@@ -154,8 +163,8 @@ with tqdm(total=num_episodes, desc="Episodes") as pbar:
 
 
             # Convert next_state to tensor
-            true_obs = torch.tensor(true_obs, dtype=torch.float32).unsqueeze(0).to(device)  / 255.0
-
+            true_obs = np.array(true_obs, dtype=np.float32)  # Convert list of numpy ndarrays to a single numpy ndarray
+            true_obs = torch.tensor(true_obs).unsqueeze(0).to(device) / 255.0
 
             # Compute loss
             predicted_obs = torch.transpose(predicted_obs, 0, 1)
@@ -196,14 +205,16 @@ world_model.eval()
 predictions = []
 for step in tqdm(range(rl_params["steps_per_ep"]), leave=False):
     # Select action
-    action = np.zeros((snn_params["num_neurons_stimulated"], int(env.step_action_observsation_simulation_time))) #env.action_space.sample()
-    
+    # action = np.zeros((snn_params["num_neurons_stimulated"], int(env.step_action_observsation_simulation_time))) #env.action_space.sample()
+    action = np.random.uniform(0.0, 1.0, (snn_params["num_neurons_stimulated"], int(env.step_action_observsation_simulation_time))) < probabilityOfSpikeAction
+    actiontensor = torch.tensor(action, dtype=torch.float32).to(device)
+
     
     # Forward pass
     prev_obs = torch.transpose(prev_obs, 0, 1)
     
     #pdb.set_trace()
-    predicted_obs, model_state = world_model(prev_obs, model_state)
+    predicted_obs, model_state = world_model(prev_obs, actiontensor, model_state)
     
     # Since each predicted obs is multiple frames it needs to be split thus
     # Now the predicted_obs is split into a list of numpy arrays and this is added to predictions list
@@ -226,7 +237,8 @@ for step in tqdm(range(rl_params["steps_per_ep"]), leave=False):
 
 
     # Convert next_state to tensor
-    true_obs = torch.tensor(true_obs, dtype=torch.float32).unsqueeze(0).to(device) / 255.0
+    true_obs = np.array(true_obs, dtype=np.float32)  # Convert list of numpy ndarrays to a single numpy ndarray
+    true_obs = torch.tensor(true_obs).unsqueeze(0).to(device) / 255.0
 
 
     # Compute loss

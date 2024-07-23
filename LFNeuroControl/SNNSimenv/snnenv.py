@@ -105,12 +105,18 @@ class snnEnv(gymnasium.Env):
         Returns:
             float: Calculated score based on the difference from desired spike rates.
         """
-        avg_rates = calculate_spike_rates(true_spikes)
+        avg_rates = calculate_spike_rates(true_spikes, self.num_neurons)
+        #pdb.set_trace()
         number_scored_neurons = 10  # Number of neurons to score
         assert number_scored_neurons <= self.num_recorded_neurons, "number of scored neurons cannot be greater than number of recorded neurons"
         desired_rates = 200 * np.ones(number_scored_neurons)  # Desired spike rates in Hz
-        
+        #pdb.set_trace()
+
         # Calculate the score as the sum of squared differences from desired rates
+        # avg_rates = list(avg_rates.values())[-number_scored_neurons:]
+        # if len(avg_rates) < len(desired_rates):
+        #     # Multiplying by -100 to make sure that no matter the desired rate there is punishment for neurons that are not firing at all and thus have no spike recoordings d
+        #     avg_rates.append(-100 * np.ones(len(desired_rates) - len(avg_rates)))
         score = np.sum((self.score_factor * (list(avg_rates.values())[-number_scored_neurons:] - desired_rates))**2)
         return score
 
@@ -330,6 +336,7 @@ class snnEnv(gymnasium.Env):
     def seed(self, seed):
         np.random.seed(seed)
 
+    # Generates a video render of the simulation and generates a graphic of the spikes of the different neurons over time
     def render(self, past_sim_steps_n, save_dir="renders/", fps=1.0):
         # Check if a folder called renders exists if not create it
         if save_dir == "renders/":
@@ -367,6 +374,10 @@ class snnEnv(gymnasium.Env):
 
         # Release the VideoWriter object
         out.release()
+
+        #Graphs and saves spikes
+        # Extract spike times for each neuron
+        graph_spikes(spikes, save_dir + "spikes.jpeg")
 
 
 

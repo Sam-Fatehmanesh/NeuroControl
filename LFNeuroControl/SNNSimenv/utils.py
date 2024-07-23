@@ -27,7 +27,7 @@ def external_rand_input_stimulation(neurons, fraction_stimulated, stimulation_pr
             stim_gen = nest.Create("spike_generator", params={"spike_times": times})
             nest.Connect(stim_gen, [neuron_id], syn_spec={"delay": synapse_delay, "weight": stimulator_synapse_weight})
 
-def calculate_spike_rates(spike_data):
+def calculate_spike_rates(spike_data, num_neurons):
     senders = spike_data['senders']
     times = spike_data['times']
     total_time = times.max() - times.min()  # Total observation time
@@ -43,9 +43,16 @@ def calculate_spike_rates(spike_data):
     # Multiplied by a thousand since the rates are per milisecond
     # Calculate average spike rate for each neuron
     average_rates = {neuron: 1000 * spike_counts[neuron] / total_time for neuron in unique_neurons}
+    # In the case that some set of neurons did not spike at all and are thus not included in the above dictionary
+    # the neurons are added with values of 0 for average_rate of fire
+    
+    for neuron in range(1,num_neurons+1):
+        if neuron not in average_rates:
+            average_rates[neuron] = 0
+
     return average_rates
 
-def graph_spikes(spike_data):
+def graph_spikes(spike_data, save_dir="spikes.jpeg"):
     """
     Creates a scatter plot of spikes from multiple neurons.
 
@@ -63,4 +70,4 @@ def graph_spikes(spike_data):
     plt.ylabel('Neuron ID')
     plt.title('Spike Plot of Neurons')
     plt.grid(True)
-    plt.savefig("")
+    plt.savefig(save_dir)

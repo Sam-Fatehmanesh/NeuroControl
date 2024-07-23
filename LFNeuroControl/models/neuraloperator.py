@@ -21,7 +21,7 @@ class FNOPredictor(nn.Module):
         self.sqrt_embed_size = int(math.sqrt(embed_size))
         self.enLinear = nn.Linear(int(in_dim), embed_size)
 
-        self.fno = FNO(n_modes=(1,), hidden_channels=1, in_channels=1, lifting_channels=embed_size, projection_channels=embed_size, n_layers=no_layers)
+        self.fno = FNO(n_modes=(128,), hidden_channels=256, in_channels=1, lifting_channels=embed_size, projection_channels=embed_size, n_layers=no_layers)
 
         # self.FNOs = nn.Sequential()
         # for i in range(layer_num):

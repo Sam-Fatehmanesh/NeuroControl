@@ -9,6 +9,7 @@ class MLP(nn.Module):
 
         # Add input layer
         self.layers.add_module('input_layer', nn.Linear(input_size, hidden_size))
+        self.layers.add_module('activation_1', nn.GELU())
 
         # Add hidden layers
         for i in range(1, layers_num):

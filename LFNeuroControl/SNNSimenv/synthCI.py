@@ -37,7 +37,8 @@ def group_spikes_camera_fps_adjust(spikes, fps):
 #     brightness_factor = 2
 #     brightness_term = 50
 #     return np.clip((noisy_image * depth_effect * brightness_factor)+brightness_term, 0, 255)
-def optical_properties(image, baseline_noise=5*10):
+def optical_properties(image, baseline_noise=5):
+    baseline_noise*=10
     blurred_image = gaussian_filter(image, sigma=gaussian_sigma)
     global_noise = np.random.normal(loc=0, scale=baseline_noise, size=image.shape)
     noisy_image = np.clip(blurred_image + global_noise, 0, 255)
