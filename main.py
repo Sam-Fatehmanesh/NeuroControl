@@ -92,8 +92,8 @@ action_size = int(snn_params["num_neurons_stimulated"] * env.step_action_observs
 
 image_n = 280
 num_frames_per_step = snn_params["step_action_observsation_simulation_time"]
-latent_size = int(24**2)
-state_size = 256
+latent_size =int(32**2) #int(24**2)
+state_size = latent_size
 
 probabilityOfSpikeAction = 0.8
 
@@ -106,10 +106,10 @@ world_model = WorldModelNOR(image_n, num_frames_per_step, latent_size, state_siz
 
 # Loss function and optimizer
 criterion = nn.MSELoss().to(device)
-optimizer = optim.Adam(world_model.parameters(), lr=0.0001)
+optimizer = optim.Adam(world_model.parameters(), lr=0.00001)
 
 losses = []
-num_episodes = 1024*4
+num_episodes = 4096#15000
 
 # Saves a text file with the str of the model and the saved parameter dictionaries
 with open(folder_name + 'params.txt', 'w') as f:

@@ -159,7 +159,7 @@ class snnEnv(gymnasium.Env):
 
         self.current_step += 1
         self.current_time_step = self.current_step * self.step_action_observsation_simulation_time
-        spike_generators = []
+
         if spikeinputs.any():
             # Stimulate neurons based on the action
             # for i, neuron_id in list(enumerate(self.neurons))[:self.num_neurons_stimulated]:
@@ -179,10 +179,7 @@ class snnEnv(gymnasium.Env):
 
         spikes = self.getObsSpikes(self.step_action_observsation_simulation_time)
 
-        # Clean up spike generators
-        for sg in spike_generators:
-            nest.Disconnect(sg)
-            
+
 
         return spikes
 
@@ -191,12 +188,22 @@ class snnEnv(gymnasium.Env):
         spikes = nest.GetStatus(self.spike_recorder, "events")[0]
 
         # Get the last set of spike events within the time window
-        max_time = spikes['times'].max()
-        indices = np.where(spikes['times'] >= (max_time - last_sim_steps))
+        times = np.array(spikes['times'])
+        #max_time = spikes['times'].max()
+        # Get the maximum time from the spike events
+        max_time = np.max(times)
+        #indices = np.where(spikes['times'] >= (max_time - last_sim_steps))
+        # Get the indices of spike events that occurred within the last simulation step
+        indices = np.where(times >= (max_time - last_sim_steps))
+
+        times = times[indices]
 
         # The minimum is subtracted to make frame index within observation length range
-        spikes['times'][indices] -= np.min(spikes['times'][indices])
-        spikes = {'senders': spikes['senders'][indices], 'times': spikes['times'][indices]}
+        #spikes['times'][indices] -= np.min(spikes['times'][indices])
+        # Subtract the minimum time from the spike times to make them start from 0
+        times -= np.min(times)
+
+        spikes = {'senders': spikes['senders'][indices], 'times': times}
 
         return spikes
 
@@ -236,8 +243,8 @@ class snnEnv(gymnasium.Env):
             np.ndarray: Initial observation.
         """
 
-        self.current_time_step = 0
-        self.current_step = 0
+        # self.current_time_step = 0
+        # self.current_step = 0
 
         if self.first_reset:
             
@@ -273,6 +280,7 @@ class snnEnv(gymnasium.Env):
                 
 
             else :
+                self.first_reset = False
                 # Load network topology from a pickle file
                 with open(self.snn_filename, 'rb') as file:
                     network_data, self.neuron_2d_pos = pickle.load(file)

@@ -30,13 +30,14 @@ class FNOPredictor(nn.Module):
         self.deLinear = nn.Linear(embed_size, int(out_dim))
 
     def forward(self, x):
+        bdim, _, _, _ = x.size()
         #pdb.set_trace()
         x = self.enLinear(x)
 
-        x = x.view(1, 1, self.embed_size)
+        x = x.view(bdim, 1, self.embed_size)
         #print("####")
         x = self.fno(x)
-        x = x.view(1,1, 1, self.embed_size)
+        x = x.view(bdim,1, 1, self.embed_size)
 
         x = self.deLinear(x)
         return x
