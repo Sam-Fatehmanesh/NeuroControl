@@ -542,12 +542,13 @@ class WorldModelNOR(nn.Module):
 
 class WorldModelMamba(nn.Module):
     def __init__(self, image_n, num_frames_per_step, latent_size, state_size, action_size, cnn_kernel_size=3):
-        super(WorldModelMoE, self).__init__()
+        super(WorldModelMamba, self).__init__()
 
         self.action_size = action_size
         self.num_frames_per_step = num_frames_per_step
         self.image_n = image_n
         self.latent_size = latent_size
+        self.state_size = state_size
 
         self.encoder_CNN_out_ch = 4
 
@@ -567,7 +568,7 @@ class WorldModelMamba(nn.Module):
         pixles_num = int(self.postCNN_image_n**2)
         self.per_image_dim = self.encoder_CNN_out_ch * pixles_num
         self.predim = self.per_image_dim * num_frames_per_step
-        self.transformer_in_dim = self.predim + state_size
+        self.transformer_in_dim = self.predim + state_size + action_size
         
         self.state_encoder = nn.Linear(latent_size, state_size)
 
@@ -612,7 +613,7 @@ class WorldModelMamba(nn.Module):
         xt = self.flat(xt)
         
         xt = xt.view(1,1, 1, self.predim)
-        state_t = state_t.view(1, 1, 1, self.per_image_dim)
+        state_t = state_t.view(1, 1, 1, self.state_size)
         action_t = self.action_flat(action_t).view(1, 1, 1, self.action_size)
 
         obs_state_cat = torch.cat((xt, state_t, action_t), dim=3)

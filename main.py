@@ -17,15 +17,19 @@ import csv
 import time
 
 # Checks if a folder called experiments exists if not it makes it
+print("Checking if 'experiments' folder exists.")
 if not os.path.exists('experiments'):
     os.makedirs('experiments')
+    print("'experiments' folder created.")
 
 # Creates a folder in it with a filename set by datetime.now()
+print("Creating a folder for the current experiment.")
 folder_name = datetime.now().strftime('%Y-%m-%d_%H-%M-%S')
 folder_name = f'experiments/{folder_name}'
 os.makedirs(folder_name)
 folder_name += "/"
 
+print("Initializing NEST backend with reduced verbosity.")
 nest.set_verbosity(30)
 device = torch.device("cuda:0" if torch.cuda.is_available() else "cpu")
 
@@ -59,8 +63,6 @@ snn_params = {
 
 num_stim_neurons = int(snn_params["fraction_stimulated"] * snn_params["num_neurons"])
 
-
-
 # Neuron Parameters
 neuron_params = {
     "C_m": 0.25,  # nF    membrane capacitance
@@ -74,44 +76,39 @@ neuron_params = {
     "V_th": -50.0  # mV    firing threshold voltage
 }
 
-
 # Set random seed
+print("Setting random seeds.")
 seed = 42
 np.random.seed(seed)
 torch.manual_seed(seed)
 
-
+print("Initializing the environment.")
 env = snnEnv(snn_params=snn_params, 
 neuron_params=neuron_params, 
 rl_params=rl_params, 
 snn_filename=None,
 apply_optical_error=False)
-#env.step(np.ones((snn_params["num_neurons_stimulated"], int(env.step_action_observsation_simulation_time))))
-
 action_size = int(snn_params["num_neurons_stimulated"] * env.step_action_observsation_simulation_time)
 
 image_n = 280
 num_frames_per_step = snn_params["step_action_observsation_simulation_time"]
-latent_size =int(32**2) #int(24**2)
+latent_size =int(32**2)
 state_size = latent_size
 
 probabilityOfSpikeAction = 0.8
 
-# World Model
-#world_model = WorldModelT(image_n, num_frames_per_step, latent_size, state_size, action_size).to(device)
-#world_model = WorldModelNO(image_n, num_frames_per_step, latent_size, state_size, action_size).to(device)
-#world_model = WorldModelMoE(image_n, num_frames_per_step, latent_size, state_size, action_size).to(device)
-#world_model = WorldModelMoENO(image_n, num_frames_per_step, latent_size, state_size, action_size).to(device)
-world_model = WorldModelNOR(image_n, num_frames_per_step, latent_size, state_size, action_size).to(device)
-
+print("Initializing the world model.")
+world_model = WorldModelMamba(image_n, num_frames_per_step, latent_size, state_size, action_size).to(device)
 # Loss function and optimizer
+print("Setting up loss function and optimizer.")
 criterion = nn.MSELoss().to(device)
-optimizer = optim.Adam(world_model.parameters(), lr=0.00001)
+optimizer = optim.Adam(world_model.parameters(), lr=0.0001)
 
 losses = []
-num_episodes = 4096#15000
+num_episodes = 8096
 
 # Saves a text file with the str of the model and the saved parameter dictionaries
+print("Saving model and parameter configurations.")
 with open(folder_name + 'params.txt', 'w') as f:
     f.write(str(world_model))
     f.write('\n\n')
@@ -135,6 +132,7 @@ sim_step_speed_times =[]
 
 # This prediction system will use backprop through time with one update step per episode
 # Training loop
+print("Starting training loop.")
 with tqdm(total=num_episodes, desc="Episodes") as pbar:
     for episode in range(num_episodes):
         # Reset the environment
@@ -188,12 +186,15 @@ with tqdm(total=num_episodes, desc="Episodes") as pbar:
 
             if done:
                 break
+            
+        losses.append(total_loss.item())
+
         # Backward pass and optimize
         optimizer.zero_grad()
         total_loss.backward()
         optimizer.step()
 
-        losses.append(total_loss.item())
+        
 
         #torch.cuda.empty_cache()
 
@@ -202,6 +203,7 @@ with tqdm(total=num_episodes, desc="Episodes") as pbar:
 
         #print(f"Episode {episode + 1}, Total Loss: {total_loss.item()}")
 
+print("Saving model and optimizer checkpoint")
 # Save the model
 checkpoint = {
     'model_state_dict': world_model.state_dict(),
@@ -211,9 +213,11 @@ torch.save(checkpoint, folder_name+"checkpoint.pth")
 
 # Runs one episode of the same number of steps and then saves a video of the 
 # true observations by running env.render() and saves a video of what the model predicted
+print("Generating example prediction video")
 world_model.eval()
 # Reset the environment
 predictions = []
+
 for step in tqdm(range(rl_params["steps_per_ep"]), leave=False):
     # Select action
     # action = np.zeros((snn_params["num_neurons_stimulated"], int(env.step_action_observsation_simulation_time))) #env.action_space.sample()
@@ -329,3 +333,4 @@ plt.title("Simulation Step Speed over Time")
 plt.savefig(folder_name + "sim_step_speed_graph.png")
 
 print(folder_name)
+
