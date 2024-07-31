@@ -207,7 +207,6 @@ class snnEnv(gymnasium.Env):
 
         return spikes
 
-
     def step(self, action):
         """
         Perform one step in the environment.
@@ -318,6 +317,9 @@ class snnEnv(gymnasium.Env):
         # Generate initial observation
         observation = self.GenFramesFromSpikes(spikes)
 
+        # Reset spike recorder
+        self.cleanSpikeRecorder()
+
         return observation, None
 
     def close(self, dirprefix = None):
@@ -410,4 +412,6 @@ class snnEnv(gymnasium.Env):
         graph_spikes(spikes, save_dir + "spikes.jpeg")
 
 
-
+    def cleanSpikeRecorder(self):
+        # Clean spike recorder
+        nest.SetStatus(self.spike_recorder, {"n_events": 0})
