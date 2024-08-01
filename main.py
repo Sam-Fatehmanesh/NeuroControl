@@ -53,7 +53,7 @@ snn_params = {
     "noise_weight": 1.0,
     "fraction_stimulated": 0.2,
     "stimulation_probability": 1,
-    "stimulator_synapse_weight": 1.3,
+    "stimulator_synapse_weight": 3000.0,
     "stimulation_time_resolution": 0.1,
     "num_recorded_neurons": 10,
     "num_neurons_stimulated": int(0.2*num_neurons),
@@ -105,7 +105,7 @@ criterion = nn.MSELoss().to(device)
 optimizer = optim.Adam(world_model.parameters(), lr=0.0001)
 
 losses = []
-num_episodes = 8096*3
+num_episodes = 8096
 
 # Saves a text file with the str of the model and the saved parameter dictionaries
 print("Saving model and parameter configurations.")

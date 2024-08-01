@@ -55,7 +55,7 @@ snn_params = {
     "noise_weight": 1.0,
     "fraction_stimulated": 0.2,
     "stimulation_probability": 1,
-    "stimulator_synapse_weight": 1.3,
+    "stimulator_synapse_weight": 3000,
     "stimulation_time_resolution": 0.1,
     "num_recorded_neurons": 10,
     "num_neurons_stimulated": int(0.2*num_neurons),
@@ -293,6 +293,7 @@ predictions = []
 
 for step in tqdm(range(rl_params["steps_per_ep"]), leave=False):
     t1 = time.time()
+
 
     steps_left = rl_params["steps_per_ep"] - step
     # Select action
