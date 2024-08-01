@@ -3,31 +3,34 @@ import torch.nn as nn
 import torch.nn.functional as F
 import numpy as np
 from NeuroControl.models.transcnn import TransCNN
-from NeuroControl.models.transformer import Transformer
+from NeuroControl.models.mlp import MLP
 from NeuroControl.models.encoder import SpikePositionEncoding
+from mamba_ssm import Mamba2
 
 
 class NeuralControlCritic(nn.Module):
-    def __init__(self, num_stim_neurons, stim_time_steps, image_n, num_frames, state_model_dim, action_model_dim):
+    def __init__(self, state_size, hidden_size):
         super(NeuralControlCritic, self).__init__()
 
-        self.statemodel = TransCNN(num_frames, image_n, state_model_dim, state_model_dim, 1)
+
+        self.loss = nn.MSELoss()
+
+        self.mlp_in = MLP(2, state_size + 2, hidden_size)
+        self.mamba = nn.Sequential(
+            Mamba2(hidden_size),
+            Mamba2(hidden_size),
+            Mamba2(hidden_size),
+            Mamba2(hidden_size),
+        )
+        self.mlp_out = MLP(2, hidden_size, 1)
+
+
+    def forward(self, x, steps_left, current_r):
         
-        self.posEncode = SpikePositionEncoding(num_stim_neurons, max_len=stim_time_steps)
-        self.actionmodel = Transformer(num_stim_neurons*stim_time_steps, action_model_dim, 32, action_model_dim * 2, action_model_dim, 4)
-
-        critic_dim = state_model_dim+action_model_dim
-
-        self.jointmodel = Transformer(critic_dim, critic_dim, 32, critic_dim*2, 1, 8)
-    
-    def forward(self, s, a):
-        x_action = self.posEncode(a)
-        x_action = self.actionmodel(a)
-
-        x_state = self.statemodel(s)
-
-        x = torch.cat((x_state, x_action))
-
-        x = self.jointmodel(x)
+        x = torch.cat((x, steps_left, current_r), dim=1)
+        x = self.mlp_in(x)
+        x = self.mamba(x)
+        x = self.mlp_out(x)
 
         return x
+
