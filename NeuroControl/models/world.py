@@ -14,7 +14,7 @@ import csv
 from soft_moe_pytorch import SoftMoE, DynamicSlotsSoftMoE
 from mamba_ssm import Mamba2
 
- 
+
 
 # A transformer based world model
 class WorldModelT(nn.Module):
@@ -544,6 +544,7 @@ class WorldModelMamba(nn.Module):
     def __init__(self, image_n, num_frames_per_step, latent_size, state_size, action_size, cnn_kernel_size=3):
         super(WorldModelMamba, self).__init__()
 
+        self.loss = nn.MSELoss()
         self.action_size = action_size
         self.num_frames_per_step = num_frames_per_step
         self.image_n = image_n
