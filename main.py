@@ -46,7 +46,7 @@ snn_params = {
     "inhibitory_exist": True,
     "fraction_inhibitory": 0.5,
     "step_action_observsation_simulation_time": 8,
-    "noise_rate": 0,
+    "noise_rate": -0,
     "neuron_connection_probability": 0.2,
     "synapse_delay_time_length": 1.0,
     "synapse_weight_factor": 1,
@@ -102,10 +102,10 @@ world_model = WorldModelMamba(image_n, num_frames_per_step, latent_size, state_s
 # Loss function and optimizer
 print("Setting up loss function and optimizer.")
 criterion = nn.MSELoss().to(device)
-optimizer = optim.Adam(world_model.parameters(), lr=0.0001)
+optimizer = optim.Adam(world_model.parameters(), lr=0.00001)
 
 losses = []
-num_episodes = 8096
+num_episodes = 8096*4
 
 # Saves a text file with the str of the model and the saved parameter dictionaries
 print("Saving model and parameter configurations.")
@@ -326,7 +326,7 @@ env.close(dirprefix=folder_name)
 
 
 # Graphs sim_step_speed_times
-plt.plot(sim_step_speed_times)
+plt.plot(sim_step_speed_times[1:])
 plt.xlabel("Step")
 plt.ylabel("Time (s)")
 plt.title("Simulation Step Speed over Time")

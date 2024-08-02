@@ -120,7 +120,8 @@ class snnEnv(gymnasium.Env):
         # if len(avg_rates) < len(desired_rates):
         #     # Multiplying by -100 to make sure that no matter the desired rate there is punishment for neurons that are not firing at all and thus have no spike recoordings d
         #     avg_rates.append(-100 * np.ones(len(desired_rates) - len(avg_rates)))
-        score = np.sum((self.score_factor * (list(avg_rates.values())[-number_scored_neurons:] - desired_rates))**2)
+        score = np.sum(np.abs(self.score_factor * (list(avg_rates.values())[-number_scored_neurons:] - desired_rates)))
+        score = np.exp(-score * 0.01)
         return score
 
     def GenFramesFromSpikes(self, spikes, total_sim_steps = None):
@@ -161,15 +162,8 @@ class snnEnv(gymnasium.Env):
         self.current_time_step = self.current_step * self.step_action_observsation_simulation_time
 
         if spikeinputs.any():
-            # Stimulate neurons based on the action
-            # for i, neuron_id in list(enumerate(self.neurons))[:self.num_neurons_stimulated]:
-            #     stimulation_times = np.array(np.where(spikeinputs[i] > 0)[0] + 1, dtype=float)
-            #     times = stimulation_times + self.current_time_step
-            #     if len(times) > 0:
-            #         stim_gen = nest.Create("spike_generator", params={"spike_times": times})
-            #         nest.Connect(stim_gen, neurostimulatorsn_id, syn_spec={"delay": self.synapse_delay_time_length, "weight": self.stimulator_synapse_weight})
-            #         spike_generators.append(stim_gen)
             for i, sg in enumerate(self.stimulators):
+                #pdb.set_trace()
                 stimulation_times = np.array(np.where(spikeinputs[i] > 0)[0] + 1, dtype=float)
                 times = stimulation_times + self.current_time_step
                 if len(times) > 0:
