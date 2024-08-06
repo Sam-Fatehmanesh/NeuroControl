@@ -40,32 +40,27 @@ class NeuralControlActor(nn.Module):
         self.mlp_out = MLP(2, self.action_time_dim_size*hidden_size, hidden_size, action_size)
         
         
-        self.act = nn.Sigmoid()
+        self.act = nn.LogSigmoid()
         #self.action_dims = (num_stim_neurons, stim_time_steps)
 
     def forward(self, x):
-        size = x.size()[0]
-        
-
         x = self.mlp_in(x)
-
-        x = x.view(1, self.action_time_dim_size, self.hidden_size)#.contiguous()
-
+        x = x.view(1, self.action_time_dim_size, self.hidden_size)
         x = self.mamba(x)
-
         x = self.flat_premlp(x)
         x = self.mlp_out(x)
-
         x = self.act(x)
-        # Reshape the output to match the action dimensions
-        x = x.view(*self.action_dims)
-        
+        #x = F.log_softmax(self.mlp_out(x), dim=-1)
+        return x.view(*self.action_dims)
 
-        return x
 
     def entropy(self, x):
+        x = torch.exp(x)  # Convert logits to probabilities
+        eps = 1e-7  # Small epsilon to prevent log(0)
+        x = torch.clamp(x, eps, 1 - eps)  # Clip values to be between eps and 1-eps
+        entropy = (-x * torch.log(x)) - ((1 - x) * torch.log(1 - x))
+        return torch.sum(entropy)
 
-        x = (-x * torch.log(x)) - ((1 - x) * torch.log(1 - x))
-        x = torch.sum(x)
-
-        return x
+    # def entropy(self, x):
+    #     probs = torch.exp(x)
+    #     return -torch.sum(probs * x + (1 - probs) * torch.log1p(-probs.exp()))
