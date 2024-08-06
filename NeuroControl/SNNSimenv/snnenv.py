@@ -37,7 +37,7 @@ class snnEnv(gymnasium.Env):
         self.current_step = 0
         self.steps_per_ep = rl_params["steps_per_ep"]
         self.score_factor = rl_params["score_factor"]
-        
+        self.reward_record = []
         self.reward_buffer = []
         self.ema_score_range = 0
         self.alpha = 0.02  # This should be 0.01 to match the 0.99 in the formula (1 - 0.99 = 0.01)
@@ -133,6 +133,11 @@ class snnEnv(gymnasium.Env):
         return score
 
     def calculate_normalized_score(self, reward):
+        # Checks if self.reward_buffer has more than 1000 elements, if so, the oldest element, aka the first, is removed
+        if len(self.reward_buffer) > 1000:
+            self.reward_buffer = self.reward_buffer[1:]
+
+        self.reward_record.append(reward)
         self.reward_buffer.append(reward)
 
         #pdb.set_trace()
