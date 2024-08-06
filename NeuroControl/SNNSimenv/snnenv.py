@@ -37,6 +37,13 @@ class snnEnv(gymnasium.Env):
         self.current_step = 0
         self.steps_per_ep = rl_params["steps_per_ep"]
         self.score_factor = rl_params["score_factor"]
+        
+        self.reward_buffer = []
+        self.ema_score_range = 0
+        self.alpha = 0.02  # This should be 0.01 to match the 0.99 in the formula (1 - 0.99 = 0.01)
+        self.minimum_rewards = 20  # Increased to ensure stable percentile calculations
+
+
 
         self.apply_optical_error = apply_optical_error
 
@@ -120,9 +127,41 @@ class snnEnv(gymnasium.Env):
         # if len(avg_rates) < len(desired_rates):
         #     # Multiplying by -100 to make sure that no matter the desired rate there is punishment for neurons that are not firing at all and thus have no spike recoordings d
         #     avg_rates.append(-100 * np.ones(len(desired_rates) - len(avg_rates)))
-        score = np.sum(np.abs(self.score_factor * (list(avg_rates.values())[-number_scored_neurons:] - desired_rates)))
-        score = np.exp(-score * 0.01)
+        
+        score = np.mean(list(avg_rates.values())[-number_scored_neurons:])#-np.sum(np.abs(self.score_factor * (list(avg_rates.values())[-number_scored_neurons:] - desired_rates)))
+        #score = np.exp(-score * 0.01)
         return score
+
+    def calculate_normalized_score(self, reward):
+        self.reward_buffer.append(reward)
+
+        #pdb.set_trace()
+        
+        if len(self.reward_buffer) > self.minimum_rewards:
+            # Calculate the 95th and 5th percentiles
+            ma = np.percentile(self.reward_buffer, 95)
+            mi = np.percentile(self.reward_buffer, 5)
+            
+            # Calculate the range
+            current_range = ma - mi
+            
+            # Update EMA of the range
+            self.ema_score_range = self.alpha * current_range + (1 - self.alpha) * self.ema_score_range
+            
+            # Normalize the reward using the EMA range
+            normalized_score = (reward - mi) / self.ema_score_range
+        else:
+           # pdb.set_trace()
+            # Before we have enough data, return the raw reward
+            ma = np.max(self.reward_buffer)
+            mi = np.min(self.reward_buffer)
+
+            current_range = ma - mi
+
+            normalized_score = (reward - mi) / current_range if current_range != 0 else 0
+        
+        
+        return normalized_score
 
     def GenFramesFromSpikes(self, spikes, total_sim_steps = None):
         """
@@ -219,6 +258,8 @@ class snnEnv(gymnasium.Env):
 
         # Calculate reward
         reward = self.score(spikes)
+        reward = self.calculate_normalized_score(reward)
+
         terminated = self.current_step >= self.steps_per_ep
         
         #!!!!!!!!!!!!!!!! temp thing rn
