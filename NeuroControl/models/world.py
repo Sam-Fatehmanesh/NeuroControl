@@ -541,14 +541,15 @@ class WorldModelNOR(nn.Module):
         return pred_observations, state_tp1
 
 class WorldModelMamba(nn.Module):
-    def __init__(self, image_n, num_frames_per_step, latent_size, state_size, action_size, cnn_kernel_size=3):
+    def __init__(self, image_n, num_frames_per_step, latent_size, action_size, cnn_kernel_size=3):
         super(WorldModelMamba, self).__init__()
 
-        self.loss = nn.MSELoss()
+        self.pred_loss = nn.MSELoss()
         self.action_size = action_size
         self.num_frames_per_step = num_frames_per_step
         self.image_n = image_n
         self.latent_size = latent_size
+        state_size = latent_size
         self.state_size = state_size
 
         self.encoder_CNN_out_ch = 4
@@ -570,8 +571,10 @@ class WorldModelMamba(nn.Module):
         self.per_image_dim = self.encoder_CNN_out_ch * pixles_num
         self.predim = self.per_image_dim * num_frames_per_step
         self.transformer_in_dim = self.predim + state_size + action_size
+
+        self.latent_vid_size = self.num_frames_per_step*latent_size
         
-        self.state_encoder = nn.Linear(latent_size, state_size)
+        # self.state_encoder = nn.Linear(latent_size, state_size)
 
         self.action_flat = nn.Flatten(start_dim=0)
 
@@ -579,7 +582,7 @@ class WorldModelMamba(nn.Module):
 
         # Latent Representation Transformer
         #self.lr_transformer = Transformer(self.per_image_dim, latent_size, heads=8, ff_dim=latent_size*2, out_dim=latent_size, layer_num=8)
-        self.lr_mlp = MLP(4, self.transformer_in_dim, latent_size, self.num_frames_per_step*latent_size)#MoEPredictor(self.per_image_dim, latent_size, latent_size, num_experts=8, num_layers=8)
+        self.lr_mlp = MLP(4, self.transformer_in_dim, latent_size, self.latent_vid_size)#MoEPredictor(self.per_image_dim, latent_size, latent_size, num_experts=8, num_layers=8)
 
         self.mamba = nn.Sequential(
             Mamba2(latent_size),
@@ -591,6 +594,8 @@ class WorldModelMamba(nn.Module):
         #self.decoder_transformer = Transformer(latent_size, latent_size, heads=8, ff_dim=latent_size*2, out_dim=pixles_num, layer_num=4)
         self.decoder_mlp = MLP(2, latent_size, latent_size, pixles_num)#MoEPredictor(latent_size, pixles_num, latent_size, num_experts=8, num_layers=4)
 
+        self.r_predict_flat = nn.Flatten(start_dim=0)
+        self.reward_predictor = MLP(8, self.latent_vid_size+2, latent_size, 1)
         # Uses deconvolutions to generate an image
         # Upscales from 35x35 to 280x280
         self.decoder_DCNN = nn.Sequential(
@@ -608,7 +613,8 @@ class WorldModelMamba(nn.Module):
         # )
 
 
-    def forward(self, observation_t, action_t, state_t):
+    def forward(self, observation_t, action_t, state_t, steps_left, current_r):
+
         
         xt = self.encoder_CNN(observation_t)
         xt = self.flat(xt)
@@ -624,13 +630,22 @@ class WorldModelMamba(nn.Module):
         zt = self.lr_mlp(obs_state_cat)
         zt = zt.view(1,self.num_frames_per_step, self.latent_size)
 
-        zt = self.mamba(zt)
+        zt_hat = self.mamba(zt.clone())
         
-        state_t = self.state_encoder(zt[:,-1])
+        # last_z_state = zt[:,-1]
+        state_t_hat = zt_hat[:,-1]
 
 
-        zt = torch.transpose(zt, 0, 1)
-        imglat = self.decoder_mlp(zt)
+        zt_hat = torch.transpose(zt_hat, 0, 1)
+
+        steps_left = torch.unsqueeze(steps_left, dim=0)
+        current_r = torch.unsqueeze(current_r, dim=0)
+        reward_predict_input = self.r_predict_flat(zt_hat).view(1,self.latent_vid_size)
+        reward_predict_input = torch.cat( (reward_predict_input, steps_left, current_r), dim=1)
+        reward_hat = self.reward_predictor(reward_predict_input)
+        reward_hat = reward_hat.view(1)
+
+        imglat = self.decoder_mlp(zt_hat)
         #pdb.set_trace()
 
         #pdb.set_trace()
@@ -639,4 +654,10 @@ class WorldModelMamba(nn.Module):
         #print(observation_t_hat.size())
         #pdb.set_trace()
 
-        return observation_t_hat, state_t
+        return observation_t_hat, state_t_hat, reward_hat
+
+    def critic_loss(self, pred_Rs, true_R):
+        #pdb.set_trace()
+        loss = torch.sum(torch.square(pred_Rs-true_R)) / pred_Rs.size(0)
+        return loss
+
