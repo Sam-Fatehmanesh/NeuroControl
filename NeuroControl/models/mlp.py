@@ -22,4 +22,6 @@ class MLP(nn.Module):
         
         
     def forward(self, x):
-        return self.layers(x)
+        for layer in self.layers:
+            x = layer(x)
+        return x

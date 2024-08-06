@@ -18,6 +18,8 @@ from matplotlib import pyplot as plt
 import csv
 import time
 
+torch.autograd.set_detect_anomaly(True)
+
 # Checks if a folder called experiments exists if not it makes it
 print("Checking if 'experiments' folder exists.")
 if not os.path.exists('experiments'):
@@ -98,27 +100,30 @@ num_frames_per_step = snn_params["step_action_observsation_simulation_time"]
 latent_size =int(32**2)
 state_size = latent_size
 
-actor_entropy_loss_factor = 0.001
+actor_entropy_loss_factor = 10
 
 probabilityOfSpikeAction = 0.8
 
 print("Initializing models.")
-world_model = WorldModelMamba(image_n, num_frames_per_step, latent_size, state_size, action_size).to(device)
+world_model = WorldModelMamba(image_n, num_frames_per_step, latent_size, action_size).to(device)
 actor_model = NeuralControlActor(state_size, latent_size, action_dims).to(device)
-critic_model = NeuralControlCritic(state_size, num_frames_per_step, latent_size).to(device)
+#critic_model = NeuralControlCritic(state_size, num_frames_per_step, latent_size).to(device)
 
 # Loss function and optimizer
 print("Setting up optimizers.")
 optimizer_w = optim.Adam(world_model.parameters(), lr=0.0001)
 optimizer_a = optim.Adam(actor_model.parameters(), lr=0.0001)
-optimizer_c = optim.Adam(critic_model.parameters(), lr=0.0001)
-optimizer = optim.Adam(list(world_model.parameters()) + list(actor_model.parameters()) + list(critic_model.parameters()), lr=0.0001)
+#optimizer_c = optim.Adam(critic_model.parameters(), lr=0.0001)
+#optimizer = optim.Adam(list(world_model.parameters()) + list(actor_model.parameters()) + list(critic_model.parameters()), lr=0.0001)
+
+
+ep_scores = []
 
 losses_w = []
 losses_a = []
 losses_c = []
 
-num_episodes = 1024#8096
+num_episodes = 128#8096*4
 
 # Saves a text file with the str of the model and the saved parameter dictionaries
 print("Saving model configurations and parameter configurations.")
@@ -141,7 +146,7 @@ with open(folder_name + 'params.txt', 'w') as f:
     f.write(str(num_episodes))
 
 # collects and graphs sim step speed times
-sim_step_speed_times =[]
+sim_step_speed_times = []
 
 # This prediction system will use backprop through time with one update step per episode
 # Training loop
@@ -166,6 +171,8 @@ with tqdm(total=num_episodes, desc="Episodes") as pbar:
 
         total_true_reward = np.zeros((1))
 
+        action_distributions = torch.empty((0, *action_dims)).to(device)
+
         for step in tqdm(range(rl_params["steps_per_ep"]), leave=False):
             t1 = time.time()
 
@@ -174,26 +181,31 @@ with tqdm(total=num_episodes, desc="Episodes") as pbar:
             # Select action
 
             #action = np.random.uniform(0.0, 1.0, (snn_params["num_neurons_stimulated"], int(env.step_action_observsation_simulation_time))) < probabilityOfSpikeAction
-            action = actor_model(model_state)
-            action_entropy_sum += actor_model.entropy(action)
+            # Compute action
+            action = actor_model(model_state.detach())
+            action_distributions = torch.cat((action_distributions, action.unsqueeze(0)), dim=0)
 
-            #action that is fed to the nest sim
-           # pdb.set_trace()
-            action_sample = torch.bernoulli(action).detach().cpu().numpy()
+
+            # Use a detached version for the environment
+            # action_for_env = action
+            action_sample = torch.exp(action)
+            action_sample = torch.bernoulli(action_sample).detach().cpu().numpy()
 
             # action equals a 2d binary matrix where
             
             # Forward pass
             prev_obs = torch.transpose(prev_obs, 0, 1)
-            
-            predicted_obs, model_state = world_model(prev_obs, action, model_state)
-
 
             steps_left_tensor = int(steps_left) *  torch.ones((1), dtype=torch.float32).to(device)
 
             current_reward_total_tensor = int(total_true_reward[0]) *  torch.ones((1), dtype=torch.float32).to(device)
+            
+            predicted_obs, model_state, predicted_reward = world_model(prev_obs, action.detach(), model_state, steps_left_tensor, current_reward_total_tensor)
 
-            predicted_reward = critic_model(model_state, steps_left_tensor, current_reward_total_tensor)
+
+            
+
+            # predicted_reward = critic_model(model_state.detach(), steps_left_tensor, current_reward_total_tensor)
             predicted_total_rewards = torch.cat((predicted_total_rewards, predicted_reward))
 
 
@@ -201,6 +213,8 @@ with tqdm(total=num_episodes, desc="Episodes") as pbar:
             # Take a step in the environment
             #pdb.set_trace()
             true_obs, reward, done, _ = env.step(action_sample)
+            
+            #print(reward)
 
             total_true_reward += reward
 
@@ -211,7 +225,7 @@ with tqdm(total=num_episodes, desc="Episodes") as pbar:
 
             # Compute loss
             predicted_obs = torch.transpose(predicted_obs, 0, 1)
-            loss = world_model.loss(predicted_obs, true_obs)
+            loss = world_model.pred_loss(predicted_obs, true_obs)
             total_loss_w += loss
 
 
@@ -225,61 +239,59 @@ with tqdm(total=num_episodes, desc="Episodes") as pbar:
             if done:
                 break
 
+        
+        # Backward pass and optimize
 
-        predicted_total_rewards_sum = torch.sum(predicted_total_rewards)
-        actor_model_loss = -(predicted_total_rewards_sum + (actor_entropy_loss_factor*action_entropy_sum))
+        ep_scores.append(total_true_reward)
+
+
+        actor_model_loss_factor = 1
+        action_entropy_sum = actor_model.entropy(action_distributions)
+        actor_entropy_loss_term = actor_entropy_loss_factor*action_entropy_sum
+
+        # multiplies action_distributions by the predicted_total_rewards and then sums it all up
+        #pdb.set_trace()
+        
+        reward_multipliers = predicted_total_rewards.detach().view(-1, 1, 1)
+        actor_policy_loss = torch.sum(action_distributions * reward_multipliers)
+        
+        actor_model_loss = -actor_model_loss_factor * (actor_policy_loss + actor_entropy_loss_term)
         losses_a.append(actor_model_loss.item())
 
-        # optimizer_a.zero_grad()
-        # actor_model_loss.backward(retain_graph=True)
-        # optimizer_a.step()
-
-        #pdb.set_trace()
-        critic_model_loss =  critic_model.loss(predicted_total_rewards, torch.tensor(total_true_reward).to(device))#torch.sum(torch.square(predicted_total_rewards - torch.tensor(total_true_reward)))
-        losses_c.append(critic_model_loss.item())
-
-        # optimizer_c.zero_grad()
-        # critic_model_loss.backward(retain_graph=True)
-        # optimizer_c.step()
-
-
-
-
+        critic_model_loss_factor = 1
+        world_critic_model_loss = critic_model_loss_factor * world_model.critic_loss(predicted_total_rewards, torch.tensor(total_true_reward).to(device))#torch.sum(torch.square(predicted_total_rewards - torch.tensor(total_true_reward)))
+        loss_w = total_loss_w + world_critic_model_loss
         losses_w.append(total_loss_w.item())
+        losses_c.append(world_critic_model_loss.item())
 
-        # Backward pass and optimize
-        # optimizer_w.zero_grad()
-        # total_loss_w.backward()
-        # optimizer_w.step()
-        actor_model_loss_factor = 1
-        critic_model_loss_factor = 200
-        actor_model_loss *= actor_model_loss_factor
-        critic_model_loss *= critic_model_loss_factor
-
-        all_loss = total_loss_w + actor_model_loss + critic_model_loss
-        
-        pbar.set_postfix({
-            "World Model Loss": total_loss_w.item(),
-            "Actor Model Loss": actor_model_loss.item(),
-            "Critic Model Loss": critic_model_loss.item()
-        })
-
-        optimizer.zero_grad()
-        all_loss.backward()
-        optimizer.step()
-
+        optimizer_a.zero_grad()
+        actor_model_loss.backward()
+        optimizer_a.step()
         
 
-        #torch.cuda.empty_cache()
-        # tqdm.write(f"World Model Loss: {total_loss_w.item()}")
-        # tqdm.write(f"Actor Model Loss: {actor_model_loss.item()}")
-        # tqdm.write(f"Critic Model Loss: {critic_model_loss.item()}")
+        
+        optimizer_w.zero_grad()
+        loss_w.backward()
+        optimizer_w.step()
 
-        #pbar.set_postfix({"Loss": total_loss_w.item()})
+
+
+        tqdm.write("#######################################")
+        tqdm.write(f"World Model Loss: {total_loss_w.item()}")
+        tqdm.write(f"World Critic Model Loss: {world_critic_model_loss.item()}")
+        tqdm.write(f"Actor Model Loss: {actor_model_loss.item()}")
+        tqdm.write(f"Current Episode Total Reward: {total_true_reward}")
+        tqdm.write("First action")
+        tqdm.write(str(action_distributions[0]))
+        tqdm.write("Last action")
+        tqdm.write(str(action_distributions[-1]))
+
 
         pbar.update(1)
 
-        #print(f"Episode {episode + 1}, Total Loss: {total_loss_w.item()}")
+
+true_rewards = env.reward_buffer
+
 
 # print("Saving model checkpoint")
 # # Save the model
@@ -293,9 +305,9 @@ with tqdm(total=num_episodes, desc="Episodes") as pbar:
 print("Generating example prediction video")
 world_model.eval()
 actor_model.eval()
-critic_model.eval()
 
 predictions = []
+
 
 # Reset the environment
 first_obs, _ = env.reset()
@@ -315,6 +327,8 @@ predicted_total_rewards = torch.empty((0)).to(device)
 
 total_true_reward = np.zeros((1))
 
+action_distributions = torch.empty((0, *action_dims)).to(device)
+
 for step in tqdm(range(rl_params["steps_per_ep"]), leave=False):
     t1 = time.time()
 
@@ -323,40 +337,37 @@ for step in tqdm(range(rl_params["steps_per_ep"]), leave=False):
     # Select action
 
     #action = np.random.uniform(0.0, 1.0, (snn_params["num_neurons_stimulated"], int(env.step_action_observsation_simulation_time))) < probabilityOfSpikeAction
-    action = actor_model(model_state)
-    action_entropy_sum += actor_model.entropy(action)
+    # Compute action
+    action = actor_model(model_state.detach())
+    action_distributions = torch.cat((action_distributions, action.unsqueeze(0)), dim=0)
 
-    #action that is fed to the nest sim
-    # pdb.set_trace()
-    action_sample = torch.bernoulli(action).detach().cpu().numpy()
+
+    # Use a detached version for the environment
+    # action_for_env = action
+    action_sample = torch.exp(action)
+    action_sample = torch.bernoulli(action_sample).detach().cpu().numpy()
 
     # action equals a 2d binary matrix where
     
     # Forward pass
     prev_obs = torch.transpose(prev_obs, 0, 1)
-    
-    predicted_obs, model_state = world_model(prev_obs, action, model_state)
-
-
-
-    predicted_obs_np = predicted_obs.detach().cpu().numpy()
-
-    # Split the numpy array into multiple frames and multiply by 255.0 to get the pixel values
-    #pdb.set_trace()
-    predicted_obs_np= np.squeeze(predicted_obs_np, axis=1)
-    predicted_obs_np = [frame for frame in predicted_obs_np]
-    #pdb.set_trace()
-
-    # Add each frame to the predictions list
-    predictions.extend(predicted_obs_np)
-
-
 
     steps_left_tensor = int(steps_left) *  torch.ones((1), dtype=torch.float32).to(device)
 
     current_reward_total_tensor = int(total_true_reward[0]) *  torch.ones((1), dtype=torch.float32).to(device)
+    
+    predicted_obs, model_state, predicted_reward = world_model(prev_obs, action.detach(), model_state, steps_left_tensor, current_reward_total_tensor)
 
-    predicted_reward = critic_model(model_state, steps_left_tensor, current_reward_total_tensor)
+
+    predicted_obs_np = predicted_obs.detach().cpu().numpy()
+
+    predicted_obs_np= np.squeeze(predicted_obs_np, axis=1)
+
+    predicted_obs_np = [frame for frame in predicted_obs_np]
+
+    predictions.extend(predicted_obs_np)
+
+    # predicted_reward = critic_model(model_state.detach(), steps_left_tensor, current_reward_total_tensor)
     predicted_total_rewards = torch.cat((predicted_total_rewards, predicted_reward))
 
 
@@ -364,6 +375,8 @@ for step in tqdm(range(rl_params["steps_per_ep"]), leave=False):
     # Take a step in the environment
     #pdb.set_trace()
     true_obs, reward, done, _ = env.step(action_sample)
+    
+    #print(reward)
 
     total_true_reward += reward
 
@@ -374,7 +387,7 @@ for step in tqdm(range(rl_params["steps_per_ep"]), leave=False):
 
     # Compute loss
     predicted_obs = torch.transpose(predicted_obs, 0, 1)
-    loss = world_model.loss(predicted_obs, true_obs)
+    loss = world_model.pred_loss(predicted_obs, true_obs)
     total_loss_w += loss
 
 
@@ -384,6 +397,44 @@ for step in tqdm(range(rl_params["steps_per_ep"]), leave=False):
 
     sim_step_speed_times.append(t2-t1)
 
+
+    if done:
+        break
+
+
+
+#pdb.set_trace()
+
+
+
+
+
+
+
+# all_loss = total_loss_w + actor_model_loss + critic_model_loss
+
+# pbar.set_postfix({
+#     "World Model Loss": total_loss_w.item(),
+#     "Actor Model Loss": actor_model_loss.item(),
+#     "Critic Model Loss": critic_model_loss.item()
+# })
+tqdm.write("#######################################")
+tqdm.write(f"World Model Loss: {total_loss_w.item()}")
+tqdm.write(f"World Critic Model Loss: {world_critic_model_loss.item()}")
+tqdm.write(f"Actor Model Loss: {actor_model_loss.item()}")
+
+
+# optimizer.zero_grad()
+# all_loss.backward()
+# optimizer.step()
+
+
+
+#torch.cuda.empty_cache()
+
+#pbar.set_postfix({"Loss": total_loss_w.item()})
+
+pbar.update(1)
 
 
 
@@ -427,12 +478,28 @@ out.release()
 # print(sim_steps_rendering)
 # print(len(predictions))
 
+#Graph total reward for each epsisode from ep_scores
+plt.plot(ep_scores)
+plt.xlabel("Episode")
+plt.ylabel("Total Reward")
+plt.title("Total Reward per Episode")
+plt.savefig(folder_name + "total_reward_graph.png")
+plt.close()
+
+# Graph score at each step from true_rewards
+plt.plot(true_rewards)
+plt.xlabel("Step")
+plt.ylabel("Score")
+plt.title("Score at Each Step")
+plt.savefig(folder_name + "step_score_graph.png")
+plt.close()
+
 # Saves a graph of the loss over time
 plt.plot(losses_w)
 plt.xlabel("Episode")
 plt.ylabel("Loss")
 plt.title("World Model Loss over Time")
-plt.savefig(folder_name + "w_loss_graph.png")
+plt.savefig(folder_name + "world_loss_graph.png")
 plt.close()
 
 # Saves a graph of the loss over time
@@ -449,7 +516,7 @@ plt.plot(losses_c)
 plt.xlabel("Episode")
 plt.ylabel("Loss")
 plt.title("Critic Model Loss over Time")
-plt.savefig(folder_name + "c_loss_graph.png")
+plt.savefig(folder_name + "critic_loss_graph.png")
 plt.close()
 
 # Saves a csv of the loss over time with each row of the csv being a differnt training episode
@@ -458,15 +525,16 @@ episode_index = [str(i) for i in range(num_episodes)]
 losses_w_str = [str(loss) for loss in losses_w]
 losses_a_str = [str(loss) for loss in losses_a]
 losses_c_str = [str(loss) for loss in losses_c]
+ep_scores = [str(score) for score in ep_scores]
 
 
 with open(folder_name + "losses.csv", "w") as f:
     writer = csv.writer(f)
     # Writes the header
-    writer.writerow(["Episode", "World Model Loss", "Actor Model Loss", "Critic Model Loss"])
+    writer.writerow(["Episode", "World Model Loss", "Actor Model Loss", "Critic Model Loss", "Env True Ep Score"])
     # Writes each episode and its corresponding loss in a separate row
-    for idx, loss_w, loss_a, loss_c in zip(episode_index, losses_w_str, losses_a_str, losses_c_str):
-        writer.writerow([idx, loss_w, loss_a, loss_c])
+    for idx, loss_w, loss_a, loss_c, score in zip(episode_index, losses_w_str, losses_a_str, losses_c_str, ep_scores):
+        writer.writerow([idx, loss_w, loss_a, loss_c, score])
 
 env.close(dirprefix=folder_name)
 

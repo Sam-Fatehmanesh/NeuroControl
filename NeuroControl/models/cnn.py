@@ -5,6 +5,8 @@ import pdb
 class CNNLayer(nn.Module):
     def __init__(self, in_channels, out_channels, kernel_size, stride=1, padding=1):
         super(CNNLayer, self).__init__()
+        #pdb.set_trace()
+        
         self.conv1 = nn.Conv2d(in_channels, out_channels, kernel_size, stride, padding)
         self.batchnorm1 = nn.BatchNorm2d(out_channels)
         self.batchnorm2 = nn.BatchNorm2d(out_channels)
@@ -29,7 +31,7 @@ class CNNLayer(nn.Module):
 
         res = self.match_dimensions(res)
         #pdb.set_trace()
-        x += res
+        x = x + res
 
         x = self.activation2(x)
 

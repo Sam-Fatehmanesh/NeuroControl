@@ -160,7 +160,7 @@ with tqdm(total=num_episodes, desc="Episodes") as pbar:
             prev_obs = torch.transpose(prev_obs, 0, 1)
             
             predicted_obs, model_state = world_model(prev_obs, actiontensor, model_state)
-        
+
 
 
             # Take a step in the environment
