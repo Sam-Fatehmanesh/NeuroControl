@@ -45,6 +45,7 @@ rl_params = {
 
 # SNN Parameters
 num_neurons = 16
+neurons_stimulated_frac = 1.0
 snn_params = {
     "num_neurons": num_neurons,
     "inhibitory_exist": True,
@@ -55,17 +56,17 @@ snn_params = {
     "synapse_delay_time_length": 1.0,
     "synapse_weight_factor": 1,
     "noise_weight": 1.0,
-    "fraction_stimulated": 0.2,
+    "fraction_stimulated": neurons_stimulated_frac,
     "stimulation_probability": 1,
     "stimulator_synapse_weight": 3000,
     "stimulation_time_resolution": 0.1,
-    "num_recorded_neurons": 10,
-    "num_neurons_stimulated": int(0.2*num_neurons),
+    "num_recorded_neurons": num_neurons,
+    "num_neurons_stimulated": int(neurons_stimulated_frac*num_neurons),
     "ih_synapse_weight_factor": 1,
     "auto_ih": True,
 }
 
-num_stim_neurons = int(snn_params["fraction_stimulated"] * snn_params["num_neurons"])
+num_stim_neurons = snn_params["num_neurons_stimulated"]
 
 # Neuron Parameters
 neuron_params = {
@@ -100,7 +101,6 @@ num_frames_per_step = snn_params["step_action_observsation_simulation_time"]
 latent_size =int(32**2)
 state_size = latent_size
 
-actor_entropy_loss_factor = 10
 
 probabilityOfSpikeAction = 0.8
 
@@ -112,7 +112,7 @@ actor_model = NeuralControlActor(state_size, latent_size, action_dims).to(device
 # Loss function and optimizer
 print("Setting up optimizers.")
 optimizer_w = optim.Adam(world_model.parameters(), lr=0.0001)
-optimizer_a = optim.Adam(actor_model.parameters(), lr=0.0001)
+optimizer_a = optim.Adam(actor_model.parameters(), lr=0.000001)
 #optimizer_c = optim.Adam(critic_model.parameters(), lr=0.0001)
 #optimizer = optim.Adam(list(world_model.parameters()) + list(actor_model.parameters()) + list(critic_model.parameters()), lr=0.0001)
 
@@ -123,7 +123,7 @@ losses_w = []
 losses_a = []
 losses_c = []
 
-num_episodes = 128#8096*4
+num_episodes = 8096
 
 # Saves a text file with the str of the model and the saved parameter dictionaries
 print("Saving model configurations and parameter configurations.")
@@ -183,6 +183,8 @@ with tqdm(total=num_episodes, desc="Episodes") as pbar:
             #action = np.random.uniform(0.0, 1.0, (snn_params["num_neurons_stimulated"], int(env.step_action_observsation_simulation_time))) < probabilityOfSpikeAction
             # Compute action
             action = actor_model(model_state.detach())
+            if episode < num_episodes/2:
+                action = torch.log(torch.rand(action.shape).to(device))
             action_distributions = torch.cat((action_distributions, action.unsqueeze(0)), dim=0)
 
 
@@ -213,6 +215,7 @@ with tqdm(total=num_episodes, desc="Episodes") as pbar:
             # Take a step in the environment
             #pdb.set_trace()
             true_obs, reward, done, _ = env.step(action_sample)
+            reward /= rl_params["steps_per_ep"]
             
             #print(reward)
 
@@ -245,31 +248,42 @@ with tqdm(total=num_episodes, desc="Episodes") as pbar:
         ep_scores.append(total_true_reward)
 
 
-        actor_model_loss_factor = 1
-        action_entropy_sum = actor_model.entropy(action_distributions)
-        actor_entropy_loss_term = actor_entropy_loss_factor*action_entropy_sum
+        actor_model_loss_factor = 0.01 * (1.0/rl_params["steps_per_ep"])
+        critic_model_loss_factor = 8
+
+        actor_model_loss = torch.zeros(1).to(device)
+
+        
+        #critic_model_loss_factor = 0
+        actor_entropy_loss_factor = 4
+
+        if episode > num_episodes/2:
+            action_entropy_sum = actor_model.entropy(action_distributions)
+            actor_entropy_loss_term = actor_entropy_loss_factor*action_entropy_sum
+            
+            reward_multipliers = predicted_total_rewards.detach().view(-1, 1, 1)
+            actor_policy_loss = torch.sum(action_distributions * reward_multipliers)
+            
+            actor_model_loss = -actor_model_loss_factor * (actor_policy_loss + actor_entropy_loss_term)
+            losses_a.append(actor_model_loss.item())
+
+            optimizer_a.zero_grad()
+            actor_model_loss.backward()
+            optimizer_a.step()
 
         # multiplies action_distributions by the predicted_total_rewards and then sums it all up
         #pdb.set_trace()
         
-        reward_multipliers = predicted_total_rewards.detach().view(-1, 1, 1)
-        actor_policy_loss = torch.sum(action_distributions * reward_multipliers)
-        
-        actor_model_loss = -actor_model_loss_factor * (actor_policy_loss + actor_entropy_loss_term)
-        losses_a.append(actor_model_loss.item())
 
-        critic_model_loss_factor = 1
+        
+        
+
+        
         world_critic_model_loss = critic_model_loss_factor * world_model.critic_loss(predicted_total_rewards, torch.tensor(total_true_reward).to(device))#torch.sum(torch.square(predicted_total_rewards - torch.tensor(total_true_reward)))
         loss_w = total_loss_w + world_critic_model_loss
         losses_w.append(total_loss_w.item())
         losses_c.append(world_critic_model_loss.item())
 
-        optimizer_a.zero_grad()
-        actor_model_loss.backward()
-        optimizer_a.step()
-        
-
-        
         optimizer_w.zero_grad()
         loss_w.backward()
         optimizer_w.step()
@@ -281,16 +295,15 @@ with tqdm(total=num_episodes, desc="Episodes") as pbar:
         tqdm.write(f"World Critic Model Loss: {world_critic_model_loss.item()}")
         tqdm.write(f"Actor Model Loss: {actor_model_loss.item()}")
         tqdm.write(f"Current Episode Total Reward: {total_true_reward}")
-        tqdm.write("First action")
-        tqdm.write(str(action_distributions[0]))
-        tqdm.write("Last action")
-        tqdm.write(str(action_distributions[-1]))
+        tqdm.write("Middle action")
+        mid_index = len(action_distributions) // 2
+        tqdm.write(str(action_distributions[mid_index]))
 
 
         pbar.update(1)
 
 
-true_rewards = env.reward_buffer
+true_rewards = env.reward_record
 
 
 # print("Saving model checkpoint")
@@ -418,11 +431,6 @@ for step in tqdm(range(rl_params["steps_per_ep"]), leave=False):
 #     "Actor Model Loss": actor_model_loss.item(),
 #     "Critic Model Loss": critic_model_loss.item()
 # })
-tqdm.write("#######################################")
-tqdm.write(f"World Model Loss: {total_loss_w.item()}")
-tqdm.write(f"World Critic Model Loss: {world_critic_model_loss.item()}")
-tqdm.write(f"Actor Model Loss: {actor_model_loss.item()}")
-
 
 # optimizer.zero_grad()
 # all_loss.backward()
@@ -434,7 +442,6 @@ tqdm.write(f"Actor Model Loss: {actor_model_loss.item()}")
 
 #pbar.set_postfix({"Loss": total_loss_w.item()})
 
-pbar.update(1)
 
 
 

@@ -595,7 +595,12 @@ class WorldModelMamba(nn.Module):
         self.decoder_mlp = MLP(2, latent_size, latent_size, pixles_num)#MoEPredictor(latent_size, pixles_num, latent_size, num_experts=8, num_layers=4)
 
         self.r_predict_flat = nn.Flatten(start_dim=0)
-        self.reward_predictor = MLP(8, self.latent_vid_size+2, latent_size, 1)
+        #self.critic_mlpin = MLP(1, self.latent_vid_size+2, latent_size, self.latent_vid_size)
+        self.critic_mamba = nn.Sequential(
+            Mamba2(latent_size),
+            Mamba2(latent_size),
+        )
+        self.critic_mlpout = MLP(2, self.latent_vid_size, latent_size, 1)
         # Uses deconvolutions to generate an image
         # Upscales from 35x35 to 280x280
         self.decoder_DCNN = nn.Sequential(
@@ -638,11 +643,16 @@ class WorldModelMamba(nn.Module):
 
         zt_hat = torch.transpose(zt_hat, 0, 1)
 
-        steps_left = torch.unsqueeze(steps_left, dim=0)
-        current_r = torch.unsqueeze(current_r, dim=0)
-        reward_predict_input = self.r_predict_flat(zt_hat).view(1,self.latent_vid_size)
-        reward_predict_input = torch.cat( (reward_predict_input, steps_left, current_r), dim=1)
-        reward_hat = self.reward_predictor(reward_predict_input)
+        #steps_left = torch.unsqueeze(steps_left, dim=0)
+        #current_r = torch.unsqueeze(current_r, dim=0)
+        reward_predict_input = zt_hat
+        #reward_predict_input = torch.cat( (reward_predict_input, steps_left, current_r), dim=1)
+        reward_predict_input[0,0,0], reward_predict_input[0,0,1] = steps_left, current_r
+        reward_predict_input = reward_predict_input.detach()
+        
+        reward_hat = self.critic_mamba(reward_predict_input)
+        reward_hat = self.r_predict_flat(reward_hat).view(1,self.latent_vid_size)
+        reward_hat = self.critic_mlpout(reward_hat)
         reward_hat = reward_hat.view(1)
 
         imglat = self.decoder_mlp(zt_hat)
