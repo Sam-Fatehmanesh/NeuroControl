@@ -9,10 +9,11 @@ from NeuroControl.models.transformer import Transformer
 from NeuroControl.models.encoder import SpikePositionEncoding
 from NeuroControl.models.moe import MoEPredictor
 from NeuroControl.models.mlp import MLP
+from NeuroControl.models.critic import NeuralControlCritic
 import pdb
 import csv
 from soft_moe_pytorch import SoftMoE, DynamicSlotsSoftMoE
-from mamba_ssm import Mamba2
+from mamba_ssm import Mamba2 as Mamba
 
 
 
@@ -543,8 +544,10 @@ class WorldModelNOR(nn.Module):
 class WorldModelMamba(nn.Module):
     def __init__(self, image_n, num_frames_per_step, latent_size, action_size, cnn_kernel_size=3):
         super(WorldModelMamba, self).__init__()
-
+        
+        self.critic_loss_func = nn.MSELoss()
         self.pred_loss = nn.MSELoss()
+
         self.action_size = action_size
         self.num_frames_per_step = num_frames_per_step
         self.image_n = image_n
@@ -552,19 +555,25 @@ class WorldModelMamba(nn.Module):
         state_size = latent_size
         self.state_size = state_size
 
-        self.encoder_CNN_out_ch = 4
+        self.encoder_CNN_out_ch = 1
 
-        num_2pools = 3
+        num_2pools = 5
 
-        self.encoder_CNN = nn.Sequential(
+        self.encoder_CNN_0 = nn.Sequential(
             CNNLayer(1, 8, cnn_kernel_size),
-            CNNLayer(8, 64, cnn_kernel_size),
             nn.MaxPool2d(2, stride=2),
-            CNNLayer(64, 128, cnn_kernel_size),
+            CNNLayer(8, 128, cnn_kernel_size),
             nn.MaxPool2d(2, stride=2),
-            CNNLayer(128, 32, cnn_kernel_size),
-             nn.MaxPool2d(2, stride=2),
-            CNNLayer(32, self.encoder_CNN_out_ch, cnn_kernel_size),
+        )
+
+        self.encoder_CNN_1 = nn.Sequential(
+            CNNLayer(128, 64, cnn_kernel_size),
+            nn.MaxPool2d(2, stride=2),
+            CNNLayer(64, 32, cnn_kernel_size),
+            nn.MaxPool2d(2, stride=2),
+            CNNLayer(32, 8, cnn_kernel_size),
+            nn.MaxPool2d(2, stride=2),
+            CNNLayer(8, self.encoder_CNN_out_ch, cnn_kernel_size),
         )
         self.postCNN_image_n = int(image_n/(2**num_2pools))
         pixles_num = int(self.postCNN_image_n**2)
@@ -585,43 +594,41 @@ class WorldModelMamba(nn.Module):
         self.lr_mlp = MLP(4, self.transformer_in_dim, latent_size, self.latent_vid_size)#MoEPredictor(self.per_image_dim, latent_size, latent_size, num_experts=8, num_layers=8)
 
         self.mamba = nn.Sequential(
-            Mamba2(latent_size),
-            Mamba2(latent_size),
-            Mamba2(latent_size),
-            Mamba2(latent_size),
+            Mamba(latent_size),
+            Mamba(latent_size),
+            Mamba(latent_size),
+            Mamba(latent_size),
         )
 
         #self.decoder_transformer = Transformer(latent_size, latent_size, heads=8, ff_dim=latent_size*2, out_dim=pixles_num, layer_num=4)
-        self.decoder_mlp = MLP(2, latent_size, latent_size, pixles_num)#MoEPredictor(latent_size, pixles_num, latent_size, num_experts=8, num_layers=4)
+        
+        #!!!!!!!!!!!!!!!!! TEMP SETTING OUTPUT AS 35 WAS pixles_num
 
-        self.r_predict_flat = nn.Flatten(start_dim=0)
-        #self.critic_mlpin = MLP(1, self.latent_vid_size+2, latent_size, self.latent_vid_size)
-        self.critic_mamba = nn.Sequential(
-            Mamba2(latent_size),
-            Mamba2(latent_size),
-        )
-        self.critic_mlpout = MLP(2, self.latent_vid_size, latent_size, 1)
+        pixles_num = int(35**2)
+        self.decoder_mlp = MLP(2, latent_size, latent_size, pixles_num)
+        self.dcnn_input_size = 35
+
+
+        self.critic_0 = NeuralControlCritic(self.num_frames_per_step, self.latent_size)
+        self.critic_1 = NeuralControlCritic(self.num_frames_per_step, self.latent_size)
+        
         # Uses deconvolutions to generate an image
         # Upscales from 35x35 to 280x280
-        self.decoder_DCNN = nn.Sequential(
-            DeCNNLayer(1, 32, kernel_size=4, stride=2, padding=1),
-            DeCNNLayer(32, 8, kernel_size=4, stride=2, padding=1),
-            DeCNNLayer(8, 1, kernel_size=4, stride=2, padding=1),
-            #DeCNNLayer(8, 1, kernel_size=4, stride=2, padding=1),
+        self.decoder_DCNN_0 = nn.Sequential(
+            DeCNNLayer(1, 128, kernel_size=4, stride=2, padding=1),
         )
-        # self.decoder_DCNN = nn.Sequential(
-        #     CNNLayer(1, 32, cnn_kernel_size),
-        #     CNNLayer(32, 128, cnn_kernel_size),
-        #     CNNLayer(128, 64, cnn_kernel_size),
-        #     CNNLayer(64, 8, cnn_kernel_size),
-        #     CNNLayer(8, 1, cnn_kernel_size),
-        # )
+        self.decoder_DCNN_1 = nn.Sequential(
+            DeCNNLayer(128, 64, kernel_size=4, stride=2, padding=1),
+            DeCNNLayer(64, 1, kernel_size=4, stride=2, padding=1),
+        )
 
 
-    def forward(self, observation_t, action_t, state_t, steps_left, current_r):
+    def forward(self, critic_mode, observation_t, action_t, state_t, steps_left, current_r):
 
         
-        xt = self.encoder_CNN(observation_t)
+        xt = self.encoder_CNN_0(observation_t)
+        image_res = xt
+        xt = self.encoder_CNN_1(xt)
         xt = self.flat(xt)
         
         xt = xt.view(1,1, 1, self.predim)
@@ -643,31 +650,26 @@ class WorldModelMamba(nn.Module):
 
         zt_hat = torch.transpose(zt_hat, 0, 1)
 
-        #steps_left = torch.unsqueeze(steps_left, dim=0)
-        #current_r = torch.unsqueeze(current_r, dim=0)
-        reward_predict_input = zt_hat
-        #reward_predict_input = torch.cat( (reward_predict_input, steps_left, current_r), dim=1)
-        reward_predict_input[0,0,0], reward_predict_input[0,0,1] = steps_left, current_r
-        reward_predict_input = reward_predict_input.detach()
-        
-        reward_hat = self.critic_mamba(reward_predict_input)
-        reward_hat = self.r_predict_flat(reward_hat).view(1,self.latent_vid_size)
-        reward_hat = self.critic_mlpout(reward_hat)
-        reward_hat = reward_hat.view(1)
 
-        imglat = self.decoder_mlp(zt_hat)
-        #pdb.set_trace()
+        if not critic_mode:
+            critic_in_state = zt_hat.detach()
+        else:
+            critic_in_state = zt_hat
 
-        #pdb.set_trace()
-        imglat = imglat.view(self.num_frames_per_step, 1, self.postCNN_image_n, self.postCNN_image_n)
-        observation_t_hat = self.decoder_DCNN(imglat)
-        #print(observation_t_hat.size())
-        #pdb.set_trace()
 
-        return observation_t_hat, state_t_hat, reward_hat
+        reward_hat_0 = self.critic_0(critic_in_state, steps_left, current_r)
+        reward_hat_1 = self.critic_1(critic_in_state, steps_left, current_r)
 
-    def critic_loss(self, pred_Rs, true_R):
-        #pdb.set_trace()
-        loss = torch.sum(torch.square(pred_Rs-true_R)) / pred_Rs.size(0)
-        return loss
+        if not critic_mode:
+            imglat = self.decoder_mlp(zt_hat)
 
+            imglat = imglat.view(self.num_frames_per_step, 1, self.dcnn_input_size, self.dcnn_input_size)
+            observation_t_hat = self.decoder_DCNN_0(imglat)
+            observation_t_hat = observation_t_hat + image_res
+            observation_t_hat = self.decoder_DCNN_1(observation_t_hat)
+
+            return observation_t_hat, state_t_hat, reward_hat_0, reward_hat_1
+
+
+
+        return None, None, reward_hat_0, reward_hat_1
