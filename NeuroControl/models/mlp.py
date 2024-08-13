@@ -9,11 +9,17 @@ class MLP(nn.Module):
 
         # Add input layer
         self.layers.add_module('input_layer', nn.Linear(input_size, hidden_size))
-        self.layers.add_module('activation_1', nn.GELU())
+        # Add activation function after input layer
+        self.layers.add_module('layer norm_0', nn.LayerNorm(hidden_size))
+        # Add activation function after input layer
+        self.layers.add_module('activation_0', nn.GELU())
 
         # Add hidden layers
         for i in range(1, layers_num):
             self.layers.add_module(f'hidden_layer_{i}', nn.Linear(hidden_size, hidden_size))
+
+            self.layers.add_module(f'layer norm_{i}', nn.LayerNorm(hidden_size))
+
             # Add activation function after each hidden layer
             self.layers.add_module(f'activation_{i}', nn.GELU())
 
@@ -22,6 +28,4 @@ class MLP(nn.Module):
         
         
     def forward(self, x):
-        for layer in self.layers:
-            x = layer(x)
-        return x
+        return self.layers(x)
