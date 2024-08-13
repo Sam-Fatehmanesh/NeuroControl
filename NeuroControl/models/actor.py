@@ -5,7 +5,7 @@ import numpy as np
 from NeuroControl.models.transcnn import TransCNN
 from NeuroControl.models.transformer import Transformer
 from NeuroControl.models.mlp import MLP
-from mamba_ssm import Mamba2
+from mamba_ssm import Mamba2 as Mamba
 import pdb
 
 
@@ -31,10 +31,10 @@ class NeuralControlActor(nn.Module):
         # self.model = TransCNN(num_input_frames, image_n, dim, self.out_dim, num_trans_layers)
         self.mlp_in = MLP(2, state_size, hidden_size, self.action_time_dim_size*hidden_size)
         self.mamba = nn.Sequential(
-            Mamba2(self.hidden_size),
-            Mamba2(self.hidden_size),
-            Mamba2(self.hidden_size),
-            Mamba2(self.hidden_size),
+            Mamba(self.hidden_size),
+            Mamba(self.hidden_size),
+            Mamba(self.hidden_size),
+            Mamba(self.hidden_size),
         )
         self.flat_premlp = nn.Flatten()
         self.mlp_out = MLP(2, self.action_time_dim_size*hidden_size, hidden_size, action_size)
