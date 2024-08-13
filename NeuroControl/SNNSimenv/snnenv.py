@@ -40,9 +40,11 @@ class snnEnv(gymnasium.Env):
         self.reward_record = []
         self.reward_buffer = []
         self.ema_score_range = 0
-        self.alpha = 0.02  # This should be 0.01 to match the 0.99 in the formula (1 - 0.99 = 0.01)
+        self.alpha = 0.1  # This should be 0.01 to match the 0.99 in the formula (1 - 0.99 = 0.01)
         self.minimum_rewards = 20  # Increased to ensure stable percentile calculations
+        self.buffer_max_size = 4096
 
+        self.buffer_min = 1
 
 
         self.apply_optical_error = apply_optical_error
@@ -133,39 +135,29 @@ class snnEnv(gymnasium.Env):
         return score
 
     def calculate_normalized_score(self, reward):
-        # Checks if self.reward_buffer has more than 1000 elements, if so, the oldest element, aka the first, is removed
-        if len(self.reward_buffer) > 1000:
-            self.reward_buffer = self.reward_buffer[1:]
-
         self.reward_record.append(reward)
-        self.reward_buffer.append(reward)
 
-        #pdb.set_trace()
-        
-        if len(self.reward_buffer) > self.minimum_rewards:
-            # Calculate the 95th and 5th percentiles
-            ma = np.percentile(self.reward_buffer, 95)
-            mi = np.percentile(self.reward_buffer, 5)
-            
+        # Checks if self.reward_buffer has more than 1000 elements, if so, the oldest element, aka the first, is removed
+        if len(self.reward_buffer) < self.buffer_max_size:
+            #self.reward_buffer = self.reward_buffer[1:]
+            self.reward_buffer.append(reward)
+
+            ma = np.max(self.reward_buffer)
+            self.buffer_min = np.min(self.reward_buffer)
+
             # Calculate the range
-            current_range = ma - mi
-            
+            current_range = ma - self.buffer_min
+
+            if current_range == 0:
+                current_range = 1
+        
             # Update EMA of the range
             self.ema_score_range = self.alpha * current_range + (1 - self.alpha) * self.ema_score_range
-            
-            # Normalize the reward using the EMA range
-            normalized_score = (reward - mi) / self.ema_score_range
-        else:
-           # pdb.set_trace()
-            # Before we have enough data, return the raw reward
-            ma = np.max(self.reward_buffer)
-            mi = np.min(self.reward_buffer)
-
-            current_range = ma - mi
-
-            normalized_score = (reward - mi) / current_range if current_range != 0 else 0
         
-        
+        # Normalize the reward using the EMA range
+        normalized_score = (reward - self.buffer_min) / self.ema_score_range
+
+    
         return normalized_score
 
     def GenFramesFromSpikes(self, spikes, total_sim_steps = None):
