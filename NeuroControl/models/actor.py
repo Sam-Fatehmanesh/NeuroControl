@@ -61,6 +61,21 @@ class NeuralControlActor(nn.Module):
         entropy = (-x * torch.log(x)) - ((1 - x) * torch.log(1 - x))
         return torch.sum(entropy)
 
-    # def entropy(self, x):
-    #     probs = torch.exp(x)
-    #     return -torch.sum(probs * x + (1 - probs) * torch.log1p(-probs.exp()))
+
+# class NeuralControlActorEnsemble(nn.Module):
+#     def __init__(self, state_size, hidden_size, action_dims):
+#         super(NeuralControlActorEnsemble, self).__init__()
+
+#         self.hidden_size = hidden_size
+#         self.state_size = state_size
+#         self.action_dims = action_dims
+
+
+
+#         #self.action_dims = (num_stim_neurons, stim_time_steps)
+
+#     def forward(self, x):
+
+        
+#         #x = F.log_softmax(self.mlp_out(x), dim=-1)
+#         return x.view(*self.action_dims)

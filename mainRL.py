@@ -18,7 +18,8 @@ from matplotlib import pyplot as plt
 import csv
 import time
 
-torch.autograd.set_detect_anomaly(True)
+# Slows down training by 2x
+# torch.autograd.set_detect_anomaly(True)
 
 # Checks if a folder called experiments exists if not it makes it
 print("Checking if 'experiments' folder exists.")
@@ -111,8 +112,8 @@ actor_model = NeuralControlActor(state_size, latent_size, action_dims).to(device
 
 # Loss function and optimizer
 print("Setting up optimizers.")
-optimizer_w = optim.Adam(world_model.parameters(), lr=0.0001)
-optimizer_a = optim.Adam(actor_model.parameters(), lr=0.00000001)
+optimizer_w = optim.Adam(world_model.parameters(), lr=0.00001)
+optimizer_a = optim.Adam(actor_model.parameters(), lr=0.00001)
 
 
 #optimizer_c = optim.Adam(critic_model.parameters(), lr=0.0001)
@@ -125,7 +126,7 @@ losses_w = []
 losses_a = []
 losses_c = []
 
-num_episodes = 8096#*4#4*4
+num_episodes = 8096#*4*16#4*4
 
 # Saves a text file with the str of the model and the saved parameter dictionaries
 print("Saving model configurations and parameter configurations.")
@@ -198,7 +199,7 @@ with tqdm(total=num_episodes, desc="Episodes") as pbar:
 
             # Use a detached version for the environment
             # action_for_env = action
-            #action_sample = torch.exp(action)
+            # action_sample = torch.exp(action)
             action_sample = torch.bernoulli(torch.exp(action)).detach().cpu().numpy()
 
             # action equals a 2d binary matrix where
@@ -230,7 +231,8 @@ with tqdm(total=num_episodes, desc="Episodes") as pbar:
             # Take a step in the environment
             #pdb.set_trace()
             true_obs, reward, done, _ = env.step(action_sample)
-            reward /= rl_params["steps_per_ep"]
+            #reward /= rl_params["steps_per_ep"]
+            reward = 2 * action_sample.sum() / (action_sample.size * rl_params["steps_per_ep"])
             
             #print(reward)
 
@@ -263,16 +265,17 @@ with tqdm(total=num_episodes, desc="Episodes") as pbar:
         ep_scores.append(total_true_reward)
 
 
-        actor_model_loss_factor = 1#0.01 * (1.0/rl_params["steps_per_ep"])
-        critic_model_loss_factor = 8 * 4
+        actor_model_loss_factor = 1 #0.01 * (1.0/rl_params["steps_per_ep"])
+        critic_model_loss_factor = 32
 
         actor_model_loss = torch.zeros(1).to(device)
 
-        
+
         actor_entropy_loss_factor = 0#0.00001
 
 
         action_entropy_sum = actor_model.entropy(action_distributions)
+        action_log_sum = torch.sum(action_distributions)
         actor_entropy_loss_term = actor_entropy_loss_factor*action_entropy_sum
         
         #reward_multipliers = predicted_total_rewards.detach().view(-1, 1, 1)
@@ -307,6 +310,7 @@ with tqdm(total=num_episodes, desc="Episodes") as pbar:
 
         optimizer_w.zero_grad()
         loss_w.backward()
+        torch.nn.utils.clip_grad_norm_(world_model.parameters(), max_norm=1.0)
         optimizer_w.step()
 
 
@@ -317,6 +321,7 @@ with tqdm(total=num_episodes, desc="Episodes") as pbar:
         tqdm.write(f"Actor Model Loss: {actor_model_loss.item()}")
         tqdm.write(f"Actor Entropy: {(actor_model_loss_factor*actor_entropy_loss_term).item()}")
         tqdm.write(f"Current Episode Total Reward: {total_true_reward_print_value}")
+        tqdm.write(f"Predicted Reward: {str(predicted_total_rewards_train)}") 
         tqdm.write("Middle action")
         mid_ep_action_index = len(action_distributions) // 2
         tqdm.write(str(action_distributions[mid_ep_action_index]))
@@ -577,6 +582,7 @@ plt.close()
 
 # Saves a graph of the loss over time
 plt.plot(losses_a)
+plt.plot(ema(losses_a, ema_k))
 plt.xlabel("Episode")
 plt.ylabel("Loss")
 plt.title("Actor Model Loss over Time")

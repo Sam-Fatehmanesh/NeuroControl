@@ -68,4 +68,3 @@ class DeCNNLayer(nn.Module):
         x = self.activation2(x)
 
         return x
-

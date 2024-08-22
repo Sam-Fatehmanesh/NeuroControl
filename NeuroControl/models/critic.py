@@ -29,7 +29,7 @@ class NeuralControlCritic(nn.Module):
             Mamba2(hidden_size),
         )
         self.pre_mlp_flat = nn.Flatten(start_dim=0)
-        self.mlp_out = MLP(2, hidden_size*self.mamba_seq_size, hidden_size, 1)
+        self.mlp_out = MLP(4, hidden_size*self.mamba_seq_size, hidden_size, 1)
 
 
     def forward(self, x, steps_left, current_r):
