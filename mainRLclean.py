@@ -1,7 +1,26 @@
 import torch
 import time
-from NeuroControl.SNNSimenv.rlenv import NeuralControl
+from NeuroControl.SNNSimenv.snnenv import NeuralControlEnv
+from NeuroControl.models.autoencoder import NeuralAutoEncoder
 import pdb
+import os
+from datetime import datetime
+import numpy as np
+import matplotlib.pyplot as plt
+import pickle
+
+# Checks if a folder called experiments exists if not it makes it
+print("Checking if 'experiments' folder exists.")
+if not os.path.exists('experiments'):
+    os.makedirs('experiments')
+    print("'experiments' folder created.")
+
+# Creates a folder in it with a filename set by datetime.now()
+print("Creating a folder for the current experiment.")
+folder_name = datetime.now().strftime('%Y-%m-%d_%H-%M-%S')
+folder_name = f'experiments/{folder_name}'
+os.makedirs(folder_name)
+folder_name += "/"
 
 device = torch.device("cuda:0" if torch.cuda.is_available() else "cpu")
 
@@ -47,21 +66,38 @@ neuron_params = {
     "V_th": -50.0
 }
 
-env = NeuralControl(snn_params, rl_params, device)
-env.neuron_params = neuron_params  # Add this line to pass neuron_params
+env = NeuralControlEnv(snn_params, neuron_params, rl_params, device)
+# env.neuron_params = neuron_params  # Add this line to pass neuron_params
 
 env.start_data_generation()
 time.sleep(2)  # Let it run for 10 seconds
-# env.stop_data_generation()
 # print("############")
 # env.start_data_generation()
 
 # Sample from the buffer
-sample = env.sample_buffer(10)
-if sample:
+obs_batch, action_batch, reward_batch = env.sample_buffer(8)
+obs_batch = list(obs_batch[0])
+# pdb.set_trace()
+obs_batch = [ob.astype(float) for ob in obs_batch]
+if obs_batch:
     print("Successfully sampled from buffer")
 else:
     print("Not enough data in buffer to sample")
 
-print(sample)
+print(obs_batch)
 # pdb.set_trace()
+
+
+env.stop_data_generation()
+
+
+env.gen_vid_from_obs(obs_batch, filename=folder_name+"test.mp4")
+ae = NeuralAutoEncoder(8)
+
+obs_batch = torch.unsqueeze(torch.tensor(np.stack(obs_batch)).float(), 0)
+# pdb.set_trace()
+decoded_obs, lat = ae(obs_batch)
+
+decoded_obs = (decoded_obs.detach().cpu().numpy() * 255)[0]
+pdb.set_trace()
+env.gen_vid_from_obs(decoded_obs, filename=folder_name+"decoded_test.mp4")
