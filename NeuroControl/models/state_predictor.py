@@ -6,14 +6,13 @@ from mamba_ssm import Mamba2 as Mamba
 from NeuroControl.models.mlp import MLP
 
 class NeuralStatePredictor(nn.Module):
-    def __init__(self, latent_size, seq_size, action_size, device):
+    def __init__(self, latent_size, seq_size, action_size):
         super(NeuralLatentPredictor, self).__init__()
 
         # Ensure latent_size is divisible by seq_size
         assert latent_size % seq_size == 0, "latent_size must be divisible by seq_size"
 
         # Initialize model parameters
-        self.device = device
         self.latent_size = latent_size
         self.seq_size = seq_size
         self.hidden_size = latent_size // seq_size
@@ -34,6 +33,8 @@ class NeuralStatePredictor(nn.Module):
         self.mlp_1 = MLP(2, latent_size, latent_size, latent_size)
 
     def forward(self, state, action):
+        
+        action = torch.flatten(action)
         x = torch.cat((state, action), dim=1)
         # Pass input through initial MLP
         x = self.mlp_0(x)

@@ -45,7 +45,7 @@ class snnEnv(gymnasium.Env):
         self.buffer_max_size = 4096
 
         self.buffer_min = 1
-
+    
 
         self.apply_optical_error = apply_optical_error
 

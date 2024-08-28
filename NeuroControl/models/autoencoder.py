@@ -12,6 +12,8 @@ class NeuralAutoEncoder(nn.Module):
 
         # self.latent_size = neuron_count * frame_count
         self.latent_size = latent_size
+
+        self.loss = nn.MSELoss()
         
         # Encoder
         self.encoder = nn.Sequential(
@@ -67,20 +69,22 @@ class NeuralAutoEncoder(nn.Module):
     def forward(self, x):
         x = self.encode(x)
 
+        latents = x
+
         x = self.decode(x)
-        return x
+        return x, latents
 
-    def loss(self, x):
-        x_hat = self.forward(x)
-        return F.mse_loss(x_hat, x)
+    # def loss(self, x):
+    #     x_hat, lats = self.forward(x)
+    #     return F.mse_loss(x_hat, x), lats
 
 
-    def train_step(self, batch, optimizer):
+    # def train_step(self, batch, optimizer):
         
-        loss = self.loss(batch)
+    #     loss = self.loss(batch)
 
-        optimizer.zero_grad()
-        loss.backward()
-        optimizer.step()
+    #     optimizer.zero_grad()
+    #     loss.backward()
+    #     optimizer.step()
 
-        return loss.item()
+    #     return loss.item()

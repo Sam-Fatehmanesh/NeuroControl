@@ -18,22 +18,29 @@ from soft_moe_pytorch import SoftMoE, DynamicSlotsSoftMoE
 from mamba_ssm import Mamba2 as Mamba
 
 class NeuralWorldModel(nn.Module):
-    def __init__(self, num_frames_per_step, latent_size, device):
+    def __init__(self, num_frames_per_step, latent_size):
         super(NeuralWorldModel, self).__init__()
 
-        self.state_predictor = NeuralLatentPredictor(latent_size, num_frames_per_step, device)
+        self.state_predictor = NeuralStatePredictor(latent_size, num_frames_per_step)
 
-        self.obs_autoencoder = NeuralAutoEncoder(latent_size, num_frames_per_step)
+        self.autoencoder = NeuralAutoEncoder(latent_size, num_frames_per_step)
 
+        self.critic = NeuralControlCritic(num_frames_per_step, latent_size)
         
 
-    def encode_obs(self, obs):
-        return self.obs_autoencoder.encode(obs)
 
-    def decode_state(self, state):
-        return self.obs_autoencoder.decode(state)
+    # def encode_obs(self, obs):
+    #     return self.obs_autoencoder.encode(obs)
 
-    def predict_state(self, state_0, steps):
+    # def decode_state(self, state):
+    #     return self.obs_autoencoder.decode(state)
+
+    # def auto_pred(self, obs):
+    #     return self.obs_autoencoder(obs)
+
+    def predict_states(self, state_0, steps):
+
+        #batch_dim = state_0.shape[0]
 
         pred_states = []
         state = state_0
@@ -44,16 +51,38 @@ class NeuralWorldModel(nn.Module):
 
         return pred_states
 
-    def predict_obs(self, state_0, steps):
+    
+
+    def predict_states_rewards(self, state_0, steps):
+        batch_dim = state_0.shape[0]
+
+        pred_states = self.predict_states(state_0, steps)
         
-        pred_states = self.predict_state(state_0, steps)
         pred_num = len(pred_states)
-        pred_states = torch.stack(pred_states, dim=1)
+        list_pred_states = pred_states
+
+        pred_states = torch.stack(pred_states, dim=1).detach()
+
+
+
+        pred_rewards = self.critic(pred_states).view(batch_dim, pred_num, 1)
+
+        return list_pred_states, pred_rewards
+
+    def predict_states_rewards_obs(self, state_0, steps):
+        
+        list_pred_states, pred_rewards = self.predict_states_rewards(state_0, steps)
+
         pred_obs = self.decode_state(pred_states)
         # Now splits it back into a list
-        pred_obs = torch.split(pred_obs, pred_num, dim=1)
+        pred_obs = torch.split(pred_obs, pred_num, dim=0)
 
-        return pred_obs
+        return list_pred_states, pred_rewards, pred_obs
+
+    # def predict_reward_from_state(self, state):
+    #     return self.critic(state)
+
+
 
     
 

@@ -16,9 +16,11 @@ class NeuralControlActor(nn.Module):
 
         self.hidden_size = hidden_size
         self.action_time_dim_size = action_dims[1]
-        self.seq_embed_size = int(hidden_size / self.action_time_dim_size)
-        # Assert that hidden_size is divisible by action_time_dim_size
+
+        # Assert that hidden_size is divisible by saction_time_dim_size
         assert hidden_size % self.action_time_dim_size == 0, "hidden_size must be divisible by action_time_dim_size"
+
+        self.seq_embed_size = int(hidden_size / self.action_time_dim_size)
 
         # action_size is the total multiplied action_dims
         action_size = np.prod(action_dims)
