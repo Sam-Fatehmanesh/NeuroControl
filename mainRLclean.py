@@ -1,6 +1,7 @@
 import torch
 import time
 from NeuroControl.SNNSimenv.rlenv import NeuralControl
+import pdb
 
 device = torch.device("cuda:0" if torch.cuda.is_available() else "cpu")
 
@@ -50,8 +51,10 @@ env = NeuralControl(snn_params, rl_params, device)
 env.neuron_params = neuron_params  # Add this line to pass neuron_params
 
 env.start_data_generation()
-time.sleep(10)  # Let it run for 10 seconds
-env.stop_data_generation()
+time.sleep(2)  # Let it run for 10 seconds
+# env.stop_data_generation()
+# print("############")
+# env.start_data_generation()
 
 # Sample from the buffer
 sample = env.sample_buffer(10)
@@ -59,3 +62,6 @@ if sample:
     print("Successfully sampled from buffer")
 else:
     print("Not enough data in buffer to sample")
+
+print(sample)
+# pdb.set_trace()
