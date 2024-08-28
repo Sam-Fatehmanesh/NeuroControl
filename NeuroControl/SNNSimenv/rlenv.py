@@ -1,4 +1,3 @@
-# from NeuroControl.SNNSimenv.snnenv import snnEnv
 import numpy as np
 import torch
 import os
@@ -15,7 +14,6 @@ class NeuralControl:
         self.snn_params = snn_params
         self.rl_params = rl_params
         
-        # Set random seed
         print("Setting random seeds.")
         seed = 42
         np.random.seed(seed)
@@ -29,7 +27,9 @@ class NeuralControl:
 
         self.data_queue = queue.Queue(maxsize=20000)
         self.stop_generation = False
+        self.pause_generation = threading.Event()
         self.simulation_thread = None
+        self.sim = None
 
     def simulation_worker(self):
         import nest
@@ -37,47 +37,61 @@ class NeuralControl:
 
         print("Initializing NEST backend with reduced verbosity.")
         nest.ResetKernel()
-        #nest.set_verbosity("M_ERROR")
+        nest.set_verbosity("M_ERROR")
 
-        sim = snnEnv(snn_params=self.snn_params, 
+        self.sim = snnEnv(snn_params=self.snn_params, 
                      neuron_params=self.neuron_params, 
                      rl_params=self.rl_params, 
                      snn_filename=None,
                      apply_optical_error=False)
 
-        obs, _ = sim.reset()
+        obs, _ = self.sim.reset()
         
         while not self.stop_generation:
+            self.pause_generation.wait()  # Wait if paused
+
             action = np.random.rand(*self.action_dims) > self.probabilityOfSpikeAction
-            next_obs, reward, done, _ = sim.step(action)
+            obs, reward, done, _ = self.sim.step(action)
 
             if self.data_queue.full():
-                self.data_queue.get()  # Remove oldest item if queue is full
-            self.data_queue.put((obs, action, reward, next_obs, done))
-
-            obs = next_obs
+                self.data_queue.get()
+            self.data_queue.put((obs, action, reward))
 
             if self.data_queue.qsize() % 16 == 0:
-                sim.cleanSpikeRecorder()
+                self.sim.cleanSpikeRecorder()
 
             if done:
-                obs, _ = sim.reset()
+                obs, _ = self.sim.reset()
 
     def start_data_generation(self):
+        self.stop_generation = False
+        self.pause_generation.set()  # Ensure it starts unpaused
         self.simulation_thread = threading.Thread(target=self.simulation_worker)
         self.simulation_thread.start()
 
     def stop_data_generation(self):
         self.stop_generation = True
+        self.pause_generation.set()  # Ensure it's not paused when stopping
         if self.simulation_thread:
             self.simulation_thread.join()
 
+    def pause_simulation(self):
+        self.pause_generation.clear()
+
+    def resume_simulation(self):
+        self.pause_generation.set()
+
     def sample_buffer(self, batch_size):
+        self.pause_simulation()  # Pause the simulator
+
         if self.data_queue.qsize() < batch_size:
+            self.resume_simulation()  # Resume if not enough data
             return None
 
         sampled_data = random.sample(list(self.data_queue.queue), batch_size)
         
-        obs_batch, action_batch, reward_batch, next_obs_batch, done_batch = zip(*sampled_data)
+        obs_batch, action_batch, reward_batch = zip(*sampled_data)
 
-        return obs_batch, action_batch, reward_batch, next_obs_batch, done_batch
+        self.resume_simulation()  # Resume the simulator
+
+        return obs_batch, action_batch, reward_batch
