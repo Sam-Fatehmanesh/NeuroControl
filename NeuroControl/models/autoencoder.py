@@ -4,19 +4,22 @@ import torch.nn.functional as F
 import pdb
 from NeuroControl.models.cnn import CNNLayer, DeCNNLayer
 from NeuroControl.models.mlp import MLP
+from NeuroControl.custom_functions.stfuncs import STMNsampler 
 
 # An autoencoder for neural video
 class NeuralAutoEncoder(nn.Module):
-    def __init__(self, latent_size, frame_count, cnn_kernel_size=3):#neuron_count, frame_count):
+    def __init__(self, frame_count, discrete_latent_size_sqrt=32, cnn_kernel_size=3):#neuron_count, frame_count):
         super(NeuralAutoEncoder, self).__init__()
 
         # self.latent_size = neuron_count * frame_count
-        self.latent_size = latent_size
+        #self.discrete_latent_catagories_num = discrete_latent_size_sqrt 
+        self.discrete_latent_side_size = discrete_latent_size_sqrt
+        self.latent_size = discrete_latent_size_sqrt**2
 
         self.loss = nn.MSELoss()
         
         # Encoder
-        self.encoder = nn.Sequential(
+        self.cnn_encoder = nn.Sequential(
             # 280x280 initial image input
             CNNLayer(frame_count, 32, cnn_kernel_size),
             nn.MaxPool2d(5, stride=5),
@@ -32,21 +35,25 @@ class NeuralAutoEncoder(nn.Module):
             # Pooled down to 1x1
             nn.Flatten(),
             # Flattened to self.latent_size
-            MLP(1, self.latent_size, self.latent_size, self.latent_size),
-            #nn.Sigmoid()
+            MLP(2, self.latent_size, self.latent_size, self.latent_size),
+            nn.Unflatten(1, (self.discrete_latent_side_size, self.discrete_latent_side_size)),
+            nn.Softmax(dim=1),
+            STMNsampler(),
+            nn.Flatten(),
         )
+
 
 
 
 
         # Decoder
         self.decoder = nn.Sequential(
-            MLP(1, self.latent_size, self.latent_size, self.latent_size),
+            MLP(2, self.latent_size, self.latent_size, self.latent_size),
             # Start with 1x1xlatent_size
             nn.Unflatten(1, (self.latent_size, 1, 1)),
             
             # Upsample to 3x3
-            DeCNNLayer(self.latent_size, 64, kernel_size=3, stride=3, padding=0),
+            DeCNNLayer(self.latent_size, 12, kernel_size=3, stride=3, padding=0),
             
             # Upsample to 14x14
             DeCNNLayer(64, 128, kernel_size=4, stride=4, padding=0),
