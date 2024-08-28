@@ -19,7 +19,7 @@ class NeuralAutoEncoder(nn.Module):
         self.loss = nn.MSELoss()
         
         # Encoder
-        self.cnn_encoder = nn.Sequential(
+        self.encoder = nn.Sequential(
             # 280x280 initial image input
             CNNLayer(frame_count, 32, cnn_kernel_size),
             nn.MaxPool2d(5, stride=5),
@@ -36,11 +36,19 @@ class NeuralAutoEncoder(nn.Module):
             nn.Flatten(),
             # Flattened to self.latent_size
             MLP(2, self.latent_size, self.latent_size, self.latent_size),
-            nn.Unflatten(1, (self.discrete_latent_side_size, self.discrete_latent_side_size)),
+            # nn.Unflatten(1, (self.discrete_latent_side_size, self.discrete_latent_side_size)),
+            #nn.Softmax(dim=1),
+            # STMNsampler(),
+            # nn.Flatten(),
+        )
+
+        self.discretizer = nn.Sequential(
             nn.Softmax(dim=1),
             STMNsampler(),
-            nn.Flatten(),
         )
+
+        # discretizer
+        # self.stmn_sampler = STMNsampler()
 
 
 
@@ -52,33 +60,46 @@ class NeuralAutoEncoder(nn.Module):
             # Start with 1x1xlatent_size
             nn.Unflatten(1, (self.latent_size, 1, 1)),
             
-            # Upsample to 3x3
-            DeCNNLayer(self.latent_size, 12, kernel_size=3, stride=3, padding=0),
+            # Upsample to 4x4
+            DeCNNLayer(self.latent_size, 256, kernel_size=4, stride=4, padding=0),
             
             # Upsample to 14x14
-            DeCNNLayer(64, 128, kernel_size=4, stride=4, padding=0),
+            DeCNNLayer(256, 128, kernel_size=4, stride=4, padding=1),
             
             # Upsample to 56x56
-            DeCNNLayer(128, 8, kernel_size=4, stride=4, padding=0),
+            DeCNNLayer(128, 64, kernel_size=4, stride=4, padding=0),
             
             # Upsample to 280x280
-            DeCNNLayer(8, 1, kernel_size=5, stride=5, padding=0),
-    
+            DeCNNLayer(64, frame_count, kernel_size=5, stride=5, padding=0),
         )
 
 
     def encode(self, x):
-        return self.encoder(x)
+        batch_dim = x.shape[0]
+        x = self.encoder(x)
+        
+
+        x = x.view(batch_dim * self.discrete_latent_side_size, self.discrete_latent_side_size)
+        
+        x = self.discretizer(x)
+
+        x = x.view(batch_dim, self.latent_size)
+
+        return x
 
     def decode(self, z):
         return self.decoder(z)
     
     def forward(self, x):
+        #pdb.set_trace()
         x = self.encode(x)
 
         latents = x
 
+        
+
         x = self.decode(x)
+        #pdb.set_trace()
         return x, latents
 
     # def loss(self, x):
