@@ -6,19 +6,19 @@ from mamba_ssm import Mamba2 as Mamba
 from NeuroControl.models.mlp import MLP
 
 class NeuralStatePredictor(nn.Module):
-    def __init__(self, latent_size, seq_size, action_size):
+    def __init__(self, hidden_state_size, seq_size, action_size):
         super(NeuralLatentPredictor, self).__init__()
 
         # Ensure latent_size is divisible by seq_size
-        assert latent_size % seq_size == 0, "latent_size must be divisible by seq_size"
+        assert hidden_state_size % seq_size == 0, "latent_size must be divisible by seq_size"
 
         # Initialize model parameters
-        self.latent_size = latent_size
+        self.latent_size = hidden_state_size
         self.seq_size = seq_size
-        self.hidden_size = latent_size // seq_size
+        self.hidden_size = hidden_state_size // seq_size
 
         # Initial MLP layer
-        self.mlp_0 = MLP(2, latent_size+action_size, latent_size+action_size, latent_size)
+        self.mlp_0 = MLP(4, latent_size+action_size, latent_size+action_size, latent_size)
 
         # Mamba layers for sequence processing
         # Input shape: (batch, seq, dim)
