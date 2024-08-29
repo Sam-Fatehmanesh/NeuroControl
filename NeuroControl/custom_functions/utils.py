@@ -29,3 +29,8 @@ class STMNsampler(nn.Module):
     def forward(self, x):
             return STsampleMultiNom.apply(x)
             
+def symlog(x):
+    return torch.sign(x) * torch.log(1 + torch.abs(x))
+
+def symexp(x):
+    return torch.sign(x) * (torch.exp(torch.abs(x)) - 1)
