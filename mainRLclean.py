@@ -8,6 +8,9 @@ from datetime import datetime
 import numpy as np
 import matplotlib.pyplot as plt
 import pickle
+import torch.optim as optim
+import cv2
+
 
 # Checks if a folder called experiments exists if not it makes it
 print("Checking if 'experiments' folder exists.")
@@ -75,9 +78,10 @@ time.sleep(2)  # Let it run for 10 seconds
 # env.start_data_generation()
 
 # Sample from the buffer
-obs_batch, action_batch, reward_batch = env.sample_buffer(8)
+obs_batch, action_batch, reward_batch = env.sample_buffer(2)
+#pdb.set_trace()
+
 obs_batch = list(obs_batch[0])
-# pdb.set_trace()
 obs_batch = [ob.astype(float) for ob in obs_batch]
 if obs_batch:
     print("Successfully sampled from buffer")
@@ -99,5 +103,83 @@ obs_batch = torch.unsqueeze(torch.tensor(np.stack(obs_batch)).float(), 0)
 decoded_obs, lat = ae(obs_batch)
 
 decoded_obs = (decoded_obs.detach().cpu().numpy() * 255)[0]
-pdb.set_trace()
+# pdb.set_trace()
 env.gen_vid_from_obs(decoded_obs, filename=folder_name+"decoded_test.mp4")
+
+# import torch.optim as optim
+
+# Set up the autoencoder and optimizer
+ae = NeuralAutoEncoder(8).to(device)
+optimizer = optim.Adam(ae.parameters(), lr=0.001)
+
+# Training loop
+num_epochs = 1
+batch_size = 32
+
+batches_per_epoch = 2048
+
+from tqdm import tqdm
+
+# Outer loop for epochs
+for epoch in tqdm(range(num_epochs), desc="Epochs"):
+    total_loss = 0
+    num_batches = 0
+    
+    # Inner loop for batches within each epoch
+    for _ in tqdm(range(batches_per_epoch), desc=f"Epoch {epoch+1}/{num_epochs}", leave=False):
+        
+        obs_batch, _, _ = env.sample_buffer(batch_size)
+        obs_batch = torch.tensor(np.stack(obs_batch)).float().to(device)
+        
+        
+
+        loss = ae.lossFunc(obs_batch) * 4
+        # print("###################")
+        # print(loss.item())
+
+        optimizer.zero_grad()
+        loss.backward()
+        optimizer.step()
+        
+        total_loss += loss.item()
+        num_batches += 1
+        tqdm.write(f"Batch Loss: {loss.item():.4f}")
+    
+    avg_loss = total_loss / num_batches
+    tqdm.write(f"Epoch [{epoch+1}/{num_epochs}], Average Loss: {avg_loss:.4f}")
+
+# Generate demo video
+print("Generating demo video...")
+
+# Sample a batch of 32 observations
+obs_batch, _, _ = env.sample_buffer(32)
+obs_batch = torch.tensor(np.stack(obs_batch)).float().to(device)
+
+# Generate reconstructions
+with torch.no_grad():
+    decoded_obs, _ = ae(obs_batch)
+
+# Convert to numpy and scale to 0-255 range
+true_obs = (obs_batch.cpu().numpy())
+decoded_obs = (decoded_obs.cpu().numpy())
+# Change both above from 32x8x280x280 to 256x280x280
+true_obs = np.transpose(true_obs, (1, 0, 2, 3))
+decoded_obs = np.transpose(decoded_obs, (1, 0, 2, 3))
+true_obs = np.reshape(true_obs, ( 256, 280, 280))
+decoded_obs = np.reshape(decoded_obs, ( 256, 280, 280))
+
+# decoded_obs = np.exp(decoded_obs)
+
+# pdb.set_trace()
+
+# Generate videos
+print("Saving true observations video...")
+env.gen_vid_from_obs(true_obs, filename=folder_name+"true_observations.mp4", fps=1)
+
+print("Saving decoded observations video...")
+env.gen_vid_from_obs(decoded_obs, filename=folder_name+"decoded_observations.mp4", fps=1)
+
+print("Demo videos generated and saved in the experiment folder.")
+
+
+print(folder_name)
