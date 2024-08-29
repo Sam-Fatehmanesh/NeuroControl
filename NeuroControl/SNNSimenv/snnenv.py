@@ -6,6 +6,9 @@ import threading
 import queue
 import cv2
 import pdb
+import time
+from collections import deque
+from tqdm import tqdm
 
 class NeuralControlEnv:
     def __init__(self, snn_params, neuron_params, rl_params, device):
@@ -31,6 +34,7 @@ class NeuralControlEnv:
         self.simulation_thread = None
         self.sim = None
 
+    
     def simulation_worker(self):
         import nest
         from NeuroControl.SNNSimenv.snnsim import snnSim
@@ -47,6 +51,9 @@ class NeuralControlEnv:
 
         obs, _ = self.sim.reset()
         
+        # Initialize deque to store timestamps of last 10 additions
+        last_10_times = deque(maxlen=10)
+        
         while not self.stop_generation:
             self.pause_generation.wait()  # Wait if paused
 
@@ -56,6 +63,16 @@ class NeuralControlEnv:
             if self.data_buffer.full():
                 self.data_buffer.get()
             self.data_buffer.put((obs, action, reward))
+
+            # Record the timestamp of this addition
+            current_time = time.time()
+            last_10_times.append(current_time)
+
+            # If we have 10 timestamps, calculate and print the rate
+            if len(last_10_times) == 10:
+                time_diff = last_10_times[-1] - last_10_times[0]
+                rate = 10 / time_diff if time_diff > 0 else 0
+                #tqdm.write(f"Data generation rate: {rate:.2f} items/second")
 
             if self.data_buffer.qsize() % 16 == 0:
                 self.sim.cleanSpikeRecorder()
