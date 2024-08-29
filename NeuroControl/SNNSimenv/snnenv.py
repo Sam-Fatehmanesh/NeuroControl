@@ -1,13 +1,11 @@
 import numpy as np
 import torch
 import os
-from datetime import datetime
-import time
-from tqdm import tqdm
 import random
 import threading
 import queue
 import cv2
+import pdb
 
 class NeuralControlEnv:
     def __init__(self, snn_params, neuron_params, rl_params, device):
@@ -27,7 +25,7 @@ class NeuralControlEnv:
 
         self.probabilityOfSpikeAction = 0.5
 
-        self.data_queue = queue.Queue(maxsize=20000)
+        self.data_buffer = queue.Queue(maxsize=20000)
         self.stop_generation = False
         self.pause_generation = threading.Event()
         self.simulation_thread = None
@@ -42,10 +40,10 @@ class NeuralControlEnv:
         nest.set_verbosity("M_ERROR")
 
         self.sim = snnSim(snn_params=self.snn_params, 
-                     neuron_params=self.neuron_params, 
-                     rl_params=self.rl_params, 
-                     snn_filename=None,
-                     apply_optical_error=False)
+                    neuron_params=self.neuron_params, 
+                    rl_params=self.rl_params, 
+                    snn_filename=None,
+                    apply_optical_error=False)
 
         obs, _ = self.sim.reset()
         
@@ -55,11 +53,11 @@ class NeuralControlEnv:
             action = np.random.rand(*self.action_dims) > self.probabilityOfSpikeAction
             obs, reward, done, _ = self.sim.step(action)
 
-            if self.data_queue.full():
-                self.data_queue.get()
-            self.data_queue.put((obs, action, reward))
+            if self.data_buffer.full():
+                self.data_buffer.get()
+            self.data_buffer.put((obs, action, reward))
 
-            if self.data_queue.qsize() % 16 == 0:
+            if self.data_buffer.qsize() % 16 == 0:
                 self.sim.cleanSpikeRecorder()
 
             if done:
@@ -86,15 +84,19 @@ class NeuralControlEnv:
     def sample_buffer(self, batch_size):
         self.pause_simulation()  # Pause the simulator
 
-        if self.data_queue.qsize() < batch_size:
+        if self.data_buffer.qsize() < batch_size:
             self.resume_simulation()  # Resume if not enough data
             return None
 
-        sampled_data = random.sample(list(self.data_queue.queue), batch_size)
+        sampled_data = random.sample(list(self.data_buffer.queue), batch_size)
         
         obs_batch, action_batch, reward_batch = zip(*sampled_data)
 
         self.resume_simulation()  # Resume the simulator
+
+        # Normalizes obs_batch to be between 0-1
+        #pdb.set_trace()
+        obs_batch = np.array(obs_batch) / 255.0
 
         return obs_batch, action_batch, reward_batch
 
@@ -109,7 +111,8 @@ class NeuralControlEnv:
         # Write each frame to the video
         for frame in obs:
             # Normalize the frame to 0-255 range
-            #frame = frame * 255.0
+            frame = frame * 255.0
+            frame = np.clip(frame, 0.0, 255.0)
             
             # Remove singleton dimensions if any
             frame = np.squeeze(frame)
