@@ -10,8 +10,8 @@ import gymnasium as gym
 class CarEnv:
     def __init__(self, render_mode=None, device='cpu', sequence_length=10):
         self.device = device
-        self.env = gym.make("CarRacing-v2", render_mode=render_mode)
-        self.sequence_length = sequence_length
+        self.env = gym.make("CarRacing-v2", render_mode=render_mode, continuous=False)
+        self.seq_length = sequence_length
         
         print("Setting random seeds.")
         seed = 42
@@ -22,10 +22,10 @@ class CarEnv:
         self.action_space = self.env.action_space
         self.observation_space = self.env.observation_space
         
-        self.action_size = 3  # CarRacing has 3 continuous actions
-        self.action_dims = (3,)
+        self.action_size = 5  # Discrete CarRacing has 5 actions
+        self.action_dims = (1,)
 
-        self.data_buffer = queue.Queue(maxsize=20000)
+        self.data_buffer = queue.Queue(maxsize=1000)  # Reduced max size due to full episodes
         self.stop_generation = False
         self.pause_generation = threading.Event()
         self.simulation_thread = None
@@ -33,46 +33,37 @@ class CarEnv:
     def preprocess_observation(self, obs):
         # Convert to grayscale and resize to 280x280
         obs = cv2.cvtColor(obs, cv2.COLOR_RGB2GRAY)
-        obs = cv2.resize(obs, (280, 280))
+        #obs = cv2.resize(obs, (280, 280))
         return obs
 
     def simulation_worker(self):
-        obs, _ = self.env.reset()
-        obs = self.preprocess_observation(obs)
-        
-        sequence_obs = []
-        sequence_actions = []
-        sequence_rewards = []
-        
         while not self.stop_generation:
             self.pause_generation.wait()  # Wait if paused
 
-            action = self.env.action_space.sample()
-            next_obs, reward, terminated, truncated, _ = self.env.step(action)
-            next_obs = self.preprocess_observation(next_obs)
+            obs, _ = self.env.reset()
+            obs = self.preprocess_observation(obs)
+            
+            episode_obs = []
+            episode_actions = []
+            episode_rewards = []
+            
+            terminated = False
+            truncated = False
 
-            sequence_obs.append(obs)
-            sequence_actions.append(action)
-            sequence_rewards.append(reward)
+            while not (terminated or truncated):
+                action = self.env.action_space.sample()
+                next_obs, reward, terminated, truncated, _ = self.env.step(action)
+                next_obs = self.preprocess_observation(next_obs)
 
-            if len(sequence_obs) == self.sequence_length:
-                if self.data_buffer.full():
-                    self.data_buffer.get()
-                self.data_buffer.put((sequence_obs, sequence_actions, sequence_rewards))
-                
-                # Start a new sequence, but keep the last observation
-                sequence_obs = [sequence_obs[-1]]
-                sequence_actions = []
-                sequence_rewards = []
+                episode_obs.append(obs)
+                episode_actions.append(action)
+                episode_rewards.append(reward)
 
-            obs = next_obs
+                obs = next_obs
 
-            if terminated or truncated:
-                obs, _ = self.env.reset()
-                obs = self.preprocess_observation(obs)
-                sequence_obs = []
-                sequence_actions = []
-                sequence_rewards = []
+            if self.data_buffer.full():
+                self.data_buffer.get()
+            self.data_buffer.put((episode_obs, episode_actions, episode_rewards))
 
     def start_data_generation(self):
         self.stop_generation = False
@@ -95,13 +86,26 @@ class CarEnv:
     def sample_buffer(self, batch_size):
         self.pause_simulation()  # Pause the simulator
 
-        if self.data_buffer.qsize() < batch_size:
+        if self.data_buffer.qsize() < 1:
             self.resume_simulation()  # Resume if not enough data
+            print("Not enough data!")
             return None
 
-        sampled_data = random.sample(list(self.data_buffer.queue), batch_size)
-        
-        obs_batch, action_batch, reward_batch = zip(*sampled_data)
+        obs_batch, action_batch, reward_batch = [], [], []
+
+        for _ in range(batch_size):
+            episode = random.choice(list(self.data_buffer.queue))
+            episode_obs, episode_actions, episode_rewards = episode
+
+            if len(episode_obs) < self.seq_length:
+                continue  # Skip episodes that are too short
+
+            start_idx = random.randint(0, len(episode_obs) - self.seq_length)
+            end_idx = start_idx + self.seq_length
+
+            obs_batch.append(episode_obs[start_idx:end_idx])
+            action_batch.append(episode_actions[start_idx:end_idx])
+            reward_batch.append(episode_rewards[start_idx:end_idx])
 
         self.resume_simulation()  # Resume the simulator
 
@@ -110,8 +114,26 @@ class CarEnv:
 
         return obs_batch, action_batch, reward_batch
 
-    def gen_vid_from_obs(self, obs, filename="simulation.mp4", fps=30.0, frame_size=(280, 280)):
-        # Ensure the output directory exists
+    def sample_episodes(self, num_episodes):
+        self.pause_simulation()  # Pause the simulator
+
+        if self.data_buffer.qsize() < num_episodes:
+            self.resume_simulation()  # Resume if not enough data
+            return None
+
+        sampled_episodes = random.sample(list(self.data_buffer.queue), num_episodes)
+        
+        obs_batch, action_batch, reward_batch = zip(*sampled_episodes)
+
+        self.resume_simulation()  # Resume the simulator
+
+        # Normalize obs_batch to be between 0-1
+        obs_batch = [np.array(episode) / 255.0 for episode in obs_batch]
+
+        return obs_batch, action_batch, reward_batch
+
+    def gen_vid_from_obs(self, obs, filename="simulation.mp4", fps=1.0, frame_size=(96, 96)):
+               # Ensure the output directory exists
         os.makedirs(os.path.dirname(filename), exist_ok=True)
 
         # Create a VideoWriter object
@@ -143,8 +165,6 @@ class CarEnv:
 
         # Release the VideoWriter object
         out.release()
-
-        print(f"Video saved as {filename}")
 
     def reset(self, seed=None, options=None):
         obs, info = self.env.reset(seed=seed, options=options)

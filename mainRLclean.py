@@ -1,6 +1,7 @@
 import torch
 import time
 from NeuroControl.SNNSimenv.snnenv import NeuralControlEnv
+from NeuroControl.testenv.carenv import CarEnv
 from NeuroControl.models.autoencoder import NeuralAutoEncoder
 import pdb
 import os
@@ -10,6 +11,8 @@ import matplotlib.pyplot as plt
 import pickle
 import torch.optim as optim
 import cv2
+from NeuroControl.custom_functions.utils import STMNsampler, symlog, symexp
+
 
 
 # Checks if a folder called experiments exists if not it makes it
@@ -69,11 +72,14 @@ neuron_params = {
     "V_th": -50.0
 }
 
-env = NeuralControlEnv(snn_params, neuron_params, rl_params, device)
+
+image_n=96
+#env = NeuralControlEnv(snn_params, neuron_params, rl_params, device)
+env = CarEnv(render_mode=None, sequence_length=8)
 # env.neuron_params = neuron_params  # Add this line to pass neuron_params
 
 env.start_data_generation()
-time.sleep(2)  # Let it run for 10 seconds
+time.sleep(10)  # Let it run for 10 seconds
 # print("############")
 # env.start_data_generation()
 
@@ -92,11 +98,11 @@ print(obs_batch)
 # pdb.set_trace()
 
 
-env.stop_data_generation()
+#env.stop_data_generation()
 
 
 env.gen_vid_from_obs(obs_batch, filename=folder_name+"test.mp4")
-ae = NeuralAutoEncoder(8)
+ae = NeuralAutoEncoder(8, image_n)
 
 obs_batch = torch.unsqueeze(torch.tensor(np.stack(obs_batch)).float(), 0)
 # pdb.set_trace()
@@ -106,17 +112,20 @@ decoded_obs = (decoded_obs.detach().cpu().numpy() * 255)[0]
 # pdb.set_trace()
 env.gen_vid_from_obs(decoded_obs, filename=folder_name+"decoded_test.mp4")
 
+
+
 # import torch.optim as optim
 
 # Set up the autoencoder and optimizer
-ae = NeuralAutoEncoder(8).to(device)
+ae = NeuralAutoEncoder(8, image_n).to(device)
+
 optimizer = optim.Adam(ae.parameters(), lr=0.001)
 
 # Training loop
 num_epochs = 1
-batch_size = 32
+batch_size = 8
 
-batches_per_epoch = 2048
+batches_per_epoch = 1024
 
 from tqdm import tqdm
 
@@ -133,7 +142,7 @@ for epoch in tqdm(range(num_epochs), desc="Epochs"):
         
         
 
-        loss = ae.lossFunc(obs_batch) * 4
+        loss, _ = ae.loss(obs_batch)
         # print("###################")
         # print(loss.item())
 
@@ -165,10 +174,10 @@ decoded_obs = (decoded_obs.cpu().numpy())
 # Change both above from 32x8x280x280 to 256x280x280
 true_obs = np.transpose(true_obs, (1, 0, 2, 3))
 decoded_obs = np.transpose(decoded_obs, (1, 0, 2, 3))
-true_obs = np.reshape(true_obs, ( 256, 280, 280))
-decoded_obs = np.reshape(decoded_obs, ( 256, 280, 280))
+true_obs = np.reshape(true_obs, ( 256, image_n, image_n))
+decoded_obs = np.reshape(decoded_obs, ( 256, image_n, image_n))
 
-# decoded_obs = np.exp(decoded_obs)
+#decoded_obs = (torch.tensor(decoded_obs)).cpu().numpy()
 
 # pdb.set_trace()
 
@@ -183,3 +192,6 @@ print("Demo videos generated and saved in the experiment folder.")
 
 
 print(folder_name)
+
+
+env.stop_data_generation()
