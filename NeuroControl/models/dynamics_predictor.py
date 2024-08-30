@@ -4,9 +4,11 @@ import torch.nn.functional as F
 import numpy as np
 from mamba_ssm import Mamba2 as Mamba
 from NeuroControl.models.mlp import MLP
+from NeuroControl.custom_functions.utils import STMNsampler, symlog, symexp
+
 
 class NeuralRecurrentDynamicsModel(nn.Module):
-    def __init__(self, hidden_state_size, obs_latent_size, action_size, seq_size):
+    def __init__(self, hidden_state_size, obs_latent_size, action_size, seq_size, per_image_discrete_latent_size_sqrt):
         super(NeuralLatentPredictor, self).__init__()
 
         # Ensure latent_size is divisible by seq_size
@@ -15,6 +17,7 @@ class NeuralRecurrentDynamicsModel(nn.Module):
         # Initialize model parameters
         self.hidden_state_size = hidden_state_size
         self.seq_size = seq_size
+        self.per_image_discrete_latent_size_sqrt = per_image_discrete_latent_size_sqrt
 
         self.obs_latent_size = obs_latent_size
 
@@ -41,11 +44,14 @@ class NeuralRecurrentDynamicsModel(nn.Module):
         )
 
 
-        
-
-
         # Final MLP layer
         self.mlp_1 = MLP(1, self.hidden_mamba_size, self.obs_latent_size, self.obs_latent_size)
+
+
+        self.discretizer = nn.Sequential(
+            nn.Softmax(dim=1),
+            STMNsampler(),
+        )
 
     def forward(self, obs_latent, h_state, action):
 
@@ -68,7 +74,12 @@ class NeuralRecurrentDynamicsModel(nn.Module):
         x = x.view(batch_dim, self.pre_post_mamba_size)
 
         # Pass through final MLP
-        obs_latent_hat = self.mlp_1(x)
+        x = self.mlp_1(x)
+
+        x = x.view(batch_dim*self.per_image_discrete_latent_size_sqrt * self.seq_size, self.per_image_discrete_latent_size_sqrt)
+        x = self.discretizer(x)
+        obs_latent_hat = x.view(batch_dim, self.obs_latent_size)
+
 
         return obs_latent_hat, h_state_hat
 
