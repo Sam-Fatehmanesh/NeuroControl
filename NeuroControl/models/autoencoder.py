@@ -12,12 +12,12 @@ from tqdm import tqdm
 
 # An autoencoder for neural video
 class NeuralAutoEncoder(nn.Module):
-    def __init__(self, frame_count, per_image_discrete_latent_size_sqrt=16, cnn_kernel_size=3):#neuron_count, frame_count):
+    def __init__(self, frame_count, image_n, per_image_discrete_latent_size_sqrt=32, cnn_kernel_size=3):#neuron_count, frame_count):
         super(NeuralAutoEncoder, self).__init__()
 
         # self.per_image_latent_size = neuron_count * frame_count
         #self.discrete_latent_catagories_num = discrete_latent_size_sqrt 
-        self.image_n = 280
+        self.image_n = 96
         self.per_image_discrete_latent_side_size = per_image_discrete_latent_size_sqrt
         self.per_image_latent_size = per_image_discrete_latent_size_sqrt**2
         self.frame_count = frame_count
@@ -34,7 +34,7 @@ class NeuralAutoEncoder(nn.Module):
         self.KLloss = nn.KLDivLoss(reduction='mean') 
         self.Rloss = nn.MSELoss()
 
-        self.post_cnn_encoder_size = 14**2
+        self.post_cnn_encoder_size = 8**2#14**2
 
         #self.pre_dcnn_decoder_size = 14**2
 
@@ -42,12 +42,13 @@ class NeuralAutoEncoder(nn.Module):
         self.encoder = nn.Sequential(
             # 280x280 initial image input
             CNNLayer(1, 16, cnn_kernel_size),
-            nn.AvgPool2d(5, stride=5),
+            nn.AvgPool2d(3, stride=3),
             # Pooled down to 56x56
-            CNNLayer(16, 64, cnn_kernel_size),
+            CNNLayer(16, 128, cnn_kernel_size),
             nn.AvgPool2d(4, stride=4),
             # Pooled down to 14x14
-            CNNLayer(64, 1, cnn_kernel_size),
+            CNNLayer(128, 1, cnn_kernel_size),
+            #CNNLayer(128, 1, cnn_kernel_size),
 
             nn.Flatten(),
             MLP(2, self.post_cnn_encoder_size, self.per_image_latent_size, self.per_image_latent_size),
@@ -131,8 +132,11 @@ class NeuralAutoEncoder(nn.Module):
 
     def loss(self, x):
         x_hat, lats = self.forward(x)
-        
-        return self.Rloss((x_hat), ((x)))
+        #x_hat = x_hat.view(x_hat.shape[0]*x_hat.shape[1], x_hat.shape[2], x_hat.shape[3])
+        #x = x.view(x.shape[0]*x.shape[1], x.shape[2], x.shape[3])
+        loss = self.Rloss((x_hat), (x))
+
+        return loss, lats
 
 
     # def train_step(self, batch, optimizer):
