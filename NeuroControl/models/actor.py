@@ -11,7 +11,7 @@ import pdb
 
 
 class NeuralControlActor(nn.Module):
-    def __init__(self, state_size, hidden_size, action_dims):
+    def __init__(self, hidden_state_and_image_lat_size, hidden_size, action_dims):
         super(NeuralControlActor, self).__init__()
 
         self.hidden_size = hidden_size
@@ -31,12 +31,12 @@ class NeuralControlActor(nn.Module):
         # Multiplied by two because we need both the mean and std for each action
         # self.out_dim = stim_time_steps * num_stim_neurons * 2
         # self.model = TransCNN(num_input_frames, image_n, dim, self.out_dim, num_trans_layers)
-        self.mlp_in = MLP(2, state_size, hidden_size, self.action_time_dim_size*hidden_size)
+        self.mlp_in = MLP(2, hidden_state_and_image_lat_size, hidden_size, self.action_time_dim_size*hidden_size)
         self.mamba = nn.Sequential(
             Mamba(self.hidden_size),
             Mamba(self.hidden_size),
-            Mamba(self.hidden_size),
-            Mamba(self.hidden_size),
+            #Mamba(self.hidden_size),
+            #Mamba(self.hidden_size),
         )
         self.flat_premlp = nn.Flatten()
         self.mlp_out = MLP(2, self.action_time_dim_size*hidden_size, hidden_size, action_size)
