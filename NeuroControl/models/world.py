@@ -10,7 +10,7 @@ from NeuroControl.models.encoder import SpikePositionEncoding
 from NeuroControl.models.moe import MoEPredictor
 from NeuroControl.models.mlp import MLP
 from NeuroControl.models.critic import NeuralControlCritic
-from NeuroControl.models.state_predictor import NeuralStatePredictor
+from NeuroControl.models.dynamics_predictor import NeuralRecurrentDynamicsModel
 from NeuroControl.models.autoencoder import NeuralAutoEncoder
 import pdb
 import csv
@@ -18,14 +18,31 @@ from soft_moe_pytorch import SoftMoE, DynamicSlotsSoftMoE
 from mamba_ssm import Mamba2 as Mamba
 
 class NeuralWorldModel(nn.Module):
-    def __init__(self, num_frames_per_step, latent_size):
+    def __init__(self, num_frames_per_step, action_dims, image_n, hidden_state_size):
         super(NeuralWorldModel, self).__init__()
 
-        self.state_predictor = NeuralStatePredictor(latent_size, num_frames_per_step)
+        assert hidden_state_size % num_frames_per_step == 0, "Hidden state size must be divisible by number of frames per step"
 
-        self.autoencoder = NeuralAutoEncoder(latent_size, num_frames_per_step)
+        self.image_n = image_n
+        self.action_dims = action_dims
+        self.action_size = np.prod(action_dims)
 
-        self.critic = NeuralControlCritic(num_frames_per_step, latent_size)
+        self.seq_size = num_frames_per_step
+
+        self.image_n = 280
+
+        self.hidden_state_size = hidden_state_size
+
+
+
+        self.per_image_discrete_latent_size_sqrt = 16
+        self.seq_obs_latent = self.per_image_discrete_latent_size_sqrt**2 * num_frames_per_step
+
+        self.autoencoder = NeuralAutoEncoder(num_frames_per_step, self.image_n, self.per_image_discrete_latent_size_sqrt)
+
+        self.state_predictor = NeuralRecurrentDynamicsModel(self.hidden_state_size, self.seq_obs_latent, self.action_size, self.seq_size)
+
+        self.critic = NeuralControlCritic(self.hidden_state_size, self.seq_size, self.seq_size)
         
 
 
@@ -38,46 +55,68 @@ class NeuralWorldModel(nn.Module):
     # def auto_pred(self, obs):
     #     return self.obs_autoencoder(obs)
 
-    def predict_states(self, state_0, steps):
+    def encode_obs(self, obs):
+        batch_dim = obs.shape[0]
+        z = self.autoencoder.encode(obs)
+        z = z.view(batch_dim, self.seq_obs_latent)
+        return z
 
-        #batch_dim = state_0.shape[0]
+    def forward(self, obs, action, hidden_state):
+        batch_dim = obs.shape[0]
 
-        pred_states = []
-        state = state_0
+        decoded_obs, obs_lats = self.autoencoder(obs)
+        decoded_obs = decoded_obs.view(batch_dim, self.seq_size, self.image_n, self.image_n)
+        obs_lats = obs_lats.view(batch_dim, self.seq_obs_latent)
 
-        for _ in range(steps):
-            state = self.state_predictor(state)
-            pred_states.append(state)
+        pred_next_obs_lat, hidden_state = self.state_predictor.forward(obs_lats, action, hidden_state)
 
-        return pred_states
+        predicted_rewards = self.critic.forward(hidden_state)
+
+
+        return decoded_obs, pred_next_obs_lat, hidden_state, predicted_rewards
+
+
+
+    # def predict_states(self, state_0, steps):
+
+    #     #batch_dim = state_0.shape[0]
+
+    #     pred_states = []
+    #     state = state_0
+
+    #     for _ in range(steps):
+    #         state = self.state_predictor(state)
+    #         pred_states.append(state)
+
+    #     return pred_states
 
     
 
-    def predict_states_rewards(self, state_0, steps):
-        batch_dim = state_0.shape[0]
+    # def predict_states_rewards(self, state_0, steps):
+    #     batch_dim = state_0.shape[0]
 
-        pred_states = self.predict_states(state_0, steps)
+    #     pred_states = self.predict_states(state_0, steps)
         
-        pred_num = len(pred_states)
-        list_pred_states = pred_states
+    #     pred_num = len(pred_states)
+    #     list_pred_states = pred_states
 
-        pred_states = torch.stack(pred_states, dim=1).detach()
+    #     pred_states = torch.stack(pred_states, dim=1).detach()
 
 
 
-        pred_rewards = self.critic(pred_states).view(batch_dim, pred_num, 1)
+    #     pred_rewards = self.critic(pred_states).view(batch_dim, pred_num, 1)
 
-        return list_pred_states, pred_rewards
+    #     return list_pred_states, pred_rewards
 
-    def predict_states_rewards_obs(self, state_0, steps):
+    # def predict_states_rewards_obs(self, state_0, steps):
         
-        list_pred_states, pred_rewards = self.predict_states_rewards(state_0, steps)
+    #     list_pred_states, pred_rewards = self.predict_states_rewards(state_0, steps)
 
-        pred_obs = self.decode_state(pred_states)
-        # Now splits it back into a list
-        pred_obs = torch.split(pred_obs, pred_num, dim=0)
+    #     pred_obs = self.decode_state(pred_states)
+    #     # Now splits it back into a list
+    #     pred_obs = torch.split(pred_obs, pred_num, dim=0)
 
-        return list_pred_states, pred_rewards, pred_obs
+    #     return list_pred_states, pred_rewards, pred_obs
 
     # def predict_reward_from_state(self, state):
     #     return self.critic(state)
