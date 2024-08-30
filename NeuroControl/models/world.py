@@ -16,9 +16,11 @@ import pdb
 import csv
 from soft_moe_pytorch import SoftMoE, DynamicSlotsSoftMoE
 from mamba_ssm import Mamba2 as Mamba
+from NeuroControl.custom_functions.utils import STMNsampler, symlog, symexp
+
 
 class NeuralWorldModel(nn.Module):
-    def __init__(self, num_frames_per_step, action_dims, image_n, hidden_state_size):
+    def __init__(self, num_frames_per_step, action_dims, image_n, hidden_state_size, image_latent_size_sqrt):
         super(NeuralWorldModel, self).__init__()
 
         assert hidden_state_size % num_frames_per_step == 0, "Hidden state size must be divisible by number of frames per step"
@@ -35,12 +37,12 @@ class NeuralWorldModel(nn.Module):
 
 
 
-        self.per_image_discrete_latent_size_sqrt = 16
+        self.per_image_discrete_latent_size_sqrt = image_latent_size_sqrt
         self.seq_obs_latent = self.per_image_discrete_latent_size_sqrt**2 * num_frames_per_step
 
         self.autoencoder = NeuralAutoEncoder(num_frames_per_step, self.image_n, self.per_image_discrete_latent_size_sqrt)
 
-        self.state_predictor = NeuralRecurrentDynamicsModel(self.hidden_state_size, self.seq_obs_latent, self.action_size, self.seq_size)
+        self.state_predictor = NeuralRecurrentDynamicsModel(self.hidden_state_size, self.seq_obs_latent, self.action_size, self.seq_size, self.per_image_discrete_latent_size_sqrt)
 
         self.critic = NeuralControlCritic(self.hidden_state_size, self.seq_size, self.seq_size)
         
@@ -73,7 +75,7 @@ class NeuralWorldModel(nn.Module):
         predicted_rewards = self.critic.forward(hidden_state)
 
 
-        return decoded_obs, pred_next_obs_lat, hidden_state, predicted_rewards
+        return decoded_obs, pred_next_obs_lat, obs_lats, hidden_state, predicted_rewards
 
 
 
