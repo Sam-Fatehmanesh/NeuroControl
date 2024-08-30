@@ -68,3 +68,15 @@ class DeCNNLayer(nn.Module):
         x = self.activation2(x)
 
         return x
+
+# Basically the nn.F.interpolate func in class form
+class InterpolateLayer(nn.Module):
+    def __init__(self, size, mode='bilinear', align_corners=False):
+        super(InterpolateLayer, self).__init__()
+        
+        self.size = size
+        self.mode = mode
+        self.align_corners = align_corners
+
+    def forward(self, x):
+        return nn.functional.interpolate(x, size=self.size, mode=self.mode, align_corners=self.align_corners)
