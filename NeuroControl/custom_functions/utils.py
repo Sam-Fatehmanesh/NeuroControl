@@ -34,3 +34,27 @@ def symlog(x):
 
 def symexp(x):
     return torch.sign(x) * (torch.exp(torch.abs(x)) - 1)
+
+def kl_divergence_with_free_bits(q_probs, p_probs, free_bits=1.0):
+    """
+    Compute KL divergence between two categorical distributions with free bits.
+    
+    Args:
+    q_probs: Probabilities of distribution q (B, ...)
+    p_probs: Probabilities of distribution p (B, ...)
+    free_bits: Minimum KL divergence (default: 1.0)
+    
+    Returns:
+    KL(q||p) for each batch element, clipped at free_bits (B,)
+    """
+
+    # Add a small epsilon to avoid log(0)
+    epsilon = 1e-8
+    
+    # Compute KL divergence
+    kl = q_probs * (torch.log(q_probs + epsilon) - torch.log(p_probs + epsilon))
+    
+    # Apply free bits
+    kl = torch.max(kl, torch.ones_like(kl) * free_bits)
+    
+    return kl.mean() 
