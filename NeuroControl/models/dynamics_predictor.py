@@ -5,11 +5,11 @@ import numpy as np
 from mamba_ssm import Mamba2 as Mamba
 from NeuroControl.models.mlp import MLP
 from NeuroControl.custom_functions.utils import STMNsampler, symlog, symexp
-
+import pdb
 
 class NeuralRecurrentDynamicsModel(nn.Module):
     def __init__(self, hidden_state_size, obs_latent_size, action_size, seq_size, per_image_discrete_latent_size_sqrt):
-        super(NeuralLatentPredictor, self).__init__()
+        super(NeuralRecurrentDynamicsModel, self).__init__()
 
         # Ensure latent_size is divisible by seq_size
         #assert hidden_state_size % seq_size == 0, "latent_size must be divisible by seq_size"
@@ -24,9 +24,9 @@ class NeuralRecurrentDynamicsModel(nn.Module):
         self.pre_mlp_size = hidden_state_size + obs_latent_size + action_size
         #self.hidden_size = 1024
 
-        self.pre_post_mamba_size = (2 ** (self.pre_mlp_size - 1).bit_length()) // 2
+        self.pre_post_mamba_size = 2 ** ((int(self.pre_mlp_size) - 1).bit_length() - 1)
 
-        assert self.per_item_mamba_size % self.seq_size == 0, "per_item_mamba_size must be divisible by 2"
+        assert self.pre_post_mamba_size % self.seq_size == 0, "per_item_mamba_size must be divisible by 2"
         self.hidden_mamba_size = self.pre_post_mamba_size // self.seq_size
 
         # Initial MLP layer
@@ -45,7 +45,7 @@ class NeuralRecurrentDynamicsModel(nn.Module):
 
 
         # Final MLP layer
-        self.mlp_1 = MLP(1, self.hidden_mamba_size, self.obs_latent_size, self.obs_latent_size)
+        self.mlp_1 = MLP(1, self.pre_post_mamba_size, self.obs_latent_size, self.obs_latent_size)
 
 
         self.discretizer = nn.Sequential(
@@ -57,9 +57,13 @@ class NeuralRecurrentDynamicsModel(nn.Module):
 
         batch_dim = obs_latent.shape[0]
         
-        action = torch.flatten(action)
+        action = torch.flatten(action, start_dim=1)
+        obs_latent = torch.flatten(obs_latent, start_dim=1)
+        #print(obs_latent.size(), h_state.size(), action.size())
+        #pdb.set_trace()
         x = torch.cat((obs_latent, h_state, action), dim=1)
-        # Pass input through initial MLP
+        # Paxss input through initial MLP
+        #pdb.set_trace()
         x = self.mlp_0(x)
 
         h_state_hat = self.gru(x, h_state)
@@ -72,6 +76,8 @@ class NeuralRecurrentDynamicsModel(nn.Module):
 
         # Reshape output back to original dimensions
         x = x.view(batch_dim, self.pre_post_mamba_size)
+
+        #pdb.set_trace()
 
         # Pass through final MLP
         x = self.mlp_1(x)
