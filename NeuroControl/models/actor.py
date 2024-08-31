@@ -15,7 +15,10 @@ class NeuralControlActor(nn.Module):
         super(NeuralControlActor, self).__init__()
 
         self.hidden_size = hidden_size
-        self.action_time_dim_size = action_dims[1]
+        try:
+            self.action_time_dim_size = action_dims[1]
+        except:
+            self.action_time_dim_size = 1
 
         # Assert that hidden_size is divisible by saction_time_dim_size
         assert hidden_size % self.action_time_dim_size == 0, "hidden_size must be divisible by action_time_dim_size"
