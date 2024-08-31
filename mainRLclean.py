@@ -1,197 +1,105 @@
 import torch
 import time
-from NeuroControl.SNNSimenv.snnenv import NeuralControlEnv
 from NeuroControl.testenv.carenv import CarEnv
-from NeuroControl.models.autoencoder import NeuralAutoEncoder
-import pdb
+from NeuroControl.control.agent import NeuralAgent
 import os
 from datetime import datetime
 import numpy as np
 import matplotlib.pyplot as plt
-import pickle
-import torch.optim as optim
-import cv2
-from NeuroControl.custom_functions.utils import STMNsampler, symlog, symexp
+import pdb
 
-
-
-# Checks if a folder called experiments exists if not it makes it
-print("Checking if 'experiments' folder exists.")
-if not os.path.exists('experiments'):
-    os.makedirs('experiments')
-    print("'experiments' folder created.")
-
-# Creates a folder in it with a filename set by datetime.now()
-print("Creating a folder for the current experiment.")
-folder_name = datetime.now().strftime('%Y-%m-%d_%H-%M-%S')
-folder_name = f'experiments/{folder_name}'
-os.makedirs(folder_name)
-folder_name += "/"
+# Set up the experiment folder
+print("Setting up experiment folder...")
+folder_name = f'experiments/{datetime.now().strftime("%Y-%m-%d_%H-%M-%S")}/'
+os.makedirs(folder_name, exist_ok=True)
 
 device = torch.device("cuda:0" if torch.cuda.is_available() else "cpu")
 
-# RL Parameters
-rl_params = {
-    "steps_per_ep": 8,
-    "score_factor": 0.1
-}
-
-# SNN Parameters
-num_neurons = 16
-neurons_stimulated_frac = 1.0
-snn_params = {
-    "num_neurons": num_neurons,
-    "inhibitory_exist": True,
-    "fraction_inhibitory": 0.5,
-    "step_action_observsation_simulation_time": 8,
-    "noise_rate": 0,
-    "neuron_connection_probability": 1/4,
-    "synapse_delay_time_length": 1.0,
-    "synapse_weight_factor": 1,
-    "noise_weight": 1.0,
-    "fraction_stimulated": neurons_stimulated_frac,
-    "stimulation_probability": 1,
-    "stimulator_synapse_weight": 3000,
-    "stimulation_time_resolution": 0.1,
-    "num_recorded_neurons": num_neurons,
-    "num_neurons_stimulated": int(neurons_stimulated_frac*num_neurons),
-    "ih_synapse_weight_factor": 1,
-    "auto_ih": True,
-}
-
-# Neuron Parameters
-neuron_params = {
-    "C_m": 0.25,
-    "I_e": 0.5,
-    "tau_m": 20.0,
-    "t_ref": 2.0,
-    "tau_syn_ex": 5.0,
-    "tau_syn_in": 5.0,
-    "V_reset": -70.0,
-    "E_L": -65.0,
-    "V_th": -50.0
-}
-
-
-image_n=96
-#env = NeuralControlEnv(snn_params, neuron_params, rl_params, device)
-env = CarEnv(render_mode=None, sequence_length=8)
-# env.neuron_params = neuron_params  # Add this line to pass neuron_params
-
+# Environment setup
+sequence_length = 8
+env = CarEnv(render_mode=None, device=device, sequence_length=sequence_length)
 env.start_data_generation()
-time.sleep(10)  # Let it run for 10 seconds
-# print("############")
-# env.start_data_generation()
 
-# Sample from the buffer
-obs_batch, action_batch, reward_batch = env.sample_buffer(2)
-#pdb.set_trace()
+print("Generating 4 real seconds worth of data")
+time.sleep(10)
 
-obs_batch = list(obs_batch[0])
-obs_batch = [ob.astype(float) for ob in obs_batch]
-if obs_batch:
-    print("Successfully sampled from buffer")
-else:
-    print("Not enough data in buffer to sample")
+# Initialize the agent
+agent = NeuralAgent(num_neurons=16, frames_per_step=sequence_length, state_latent_size=256, steps_per_ep=8, env=env)
 
-print(obs_batch)
-# pdb.set_trace()
+# agent.pre_training_loss([torch.rand((1,8,96,96)).to(device)],[torch.rand((1,5,)).to(device) > 0.5], [torch.rand((1,8,)).to(device)])
+# print("Done.")
 
-
-#env.stop_data_generation()
-
-
-env.gen_vid_from_obs(obs_batch, filename=folder_name+"test.mp4")
-ae = NeuralAutoEncoder(8, image_n)
-
-obs_batch = torch.unsqueeze(torch.tensor(np.stack(obs_batch)).float(), 0)
-# pdb.set_trace()
-decoded_obs, lat = ae(obs_batch)
-
-decoded_obs = (decoded_obs.detach().cpu().numpy() * 255)[0]
-# pdb.set_trace()
-env.gen_vid_from_obs(decoded_obs, filename=folder_name+"decoded_test.mp4")
-
-
-
-# import torch.optim as optim
-
-# Set up the autoencoder and optimizer
-ae = NeuralAutoEncoder(8, image_n).to(device)
-
-optimizer = optim.Adam(ae.parameters(), lr=0.001)
-
-# Training loop
-num_epochs = 1
+# Pre-training loop
+num_epochs = 100
 batch_size = 8
 
-batches_per_epoch = 1024
-
-from tqdm import tqdm
-
-# Outer loop for epochs
-for epoch in tqdm(range(num_epochs), desc="Epochs"):
-    total_loss = 0
-    num_batches = 0
+for epoch in range(num_epochs):
+    obs_batch, action_batch, reward_batch = env.sample_buffer(batch_size)
     
-    # Inner loop for batches within each epoch
-    for _ in tqdm(range(batches_per_epoch), desc=f"Epoch {epoch+1}/{num_epochs}", leave=False):
-        
-        obs_batch, _, _ = env.sample_buffer(batch_size)
-        obs_batch = torch.tensor(np.stack(obs_batch)).float().to(device)
-        
-        
+    # Convert numpy arrays to PyTorch tensors
+    obs_batch = torch.tensor(np.array(obs_batch), dtype=torch.float32).to(device)
+    action_batch = torch.tensor(np.array(action_batch), dtype=torch.float32).to(device)
+    reward_batch = torch.tensor(np.array(reward_batch), dtype=torch.float32).to(device)
 
-        loss, _ = ae.loss(obs_batch)
-        # print("###################")
-        # print(loss.item())
-
-        optimizer.zero_grad()
-        loss.backward()
-        optimizer.step()
-        
-        total_loss += loss.item()
-        num_batches += 1
-        tqdm.write(f"Batch Loss: {loss.item():.4f}")
+    #pdb.set_trace()
     
-    avg_loss = total_loss / num_batches
-    tqdm.write(f"Epoch [{epoch+1}/{num_epochs}], Average Loss: {avg_loss:.4f}")
+    loss = agent.pre_training_loss(obs_batch, action_batch, reward_batch)
+    
+    agent.optimizer_w.zero_grad()
+    loss.backward()
+    agent.optimizer_w.step()
+    
+    print(f"Epoch {epoch+1}/{num_epochs}, Loss: {loss.item()}")
 
-# Generate demo video
+# # Test the dynamics predictor
+# def generate_future_video(agent, initial_obs, num_steps, filename):
+#     with torch.no_grad():
+#         current_obs = torch.tensor(initial_obs, dtype=torch.float32).unsqueeze(0).to(device)
+#         hidden_state = torch.zeros(1, agent.state_latent_size).to(device)
+#         action = torch.zeros((1, sequence_length, 5)).to(device)
+        
+#         future_obs = [current_obs]
+        
+#         for _ in range(num_steps):
+#             decoded_obs, pred_next_obs_lat, _, hidden_state, _ = agent.world_model.forward(current_obs, action, hidden_state)
+#             future_obs.append(decoded_obs)
+#             current_obs = decoded_obs.view(1, sequence_length, 96, 96)
+        
+#         future_obs = torch.cat(future_obs, dim=0).cpu().numpy()
+#         env.gen_vid_from_obs(future_obs, filename, fps=10.0, frame_size=(96, 96))
+
+# # Generate a test video
+# initial_obs, _, _ = env.sample_buffer(1)
+# generate_future_video(agent, initial_obs[0], num_steps=50, filename=f"{folder_name}/future_prediction.mp4")
+
+# env.stop_data_generation()
+# print(f"Experiment results saved in {folder_name}")
+
+# Generate a demo video
 print("Generating demo video...")
-
-# Sample a batch of 32 observations
-obs_batch, _, _ = env.sample_buffer(32)
-obs_batch = torch.tensor(np.stack(obs_batch)).float().to(device)
-
-# Generate reconstructions
 with torch.no_grad():
-    decoded_obs, _ = ae(obs_batch)
+    # Get an initial observation
+    initial_obs, _, _ = env.sample_buffer(1)
+    initial_obs = torch.tensor(initial_obs, dtype=torch.float32).to(device)
+    
+    # Encode the initial observation
+    initial_latent = agent.world_model.encode_obs(initial_obs)
+    
+    # Predict future latents
+    future_steps = 64
+    predicted_latents = agent.predict_image_latents(future_steps, initial_latent)
+    
+    # Decode the predicted latents to observations
+    #predicted_latents = predicted_latents.view(batch_size*future_steps*sequence_length, 256)
+    predicted_obs = agent.predict_obs(predicted_latents)
+    
+    # Move the predictions to CPU for video generation
+    predicted_obs = predicted_obs.cpu().numpy()
+    
+    # Generate video
+    env.gen_vid_from_obs(predicted_obs, f"{folder_name}/predicted_future.mp4", fps=10.0, frame_size=(96, 96))
 
-# Convert to numpy and scale to 0-255 range
-true_obs = (obs_batch.cpu().numpy())
-decoded_obs = (decoded_obs.cpu().numpy())
-# Change both above from 32x8x280x280 to 256x280x280
-true_obs = np.transpose(true_obs, (1, 0, 2, 3))
-decoded_obs = np.transpose(decoded_obs, (1, 0, 2, 3))
-true_obs = np.reshape(true_obs, ( 256, image_n, image_n))
-decoded_obs = np.reshape(decoded_obs, ( 256, image_n, image_n))
-
-#decoded_obs = (torch.tensor(decoded_obs)).cpu().numpy()
-
-# pdb.set_trace()
-
-# Generate videos
-print("Saving true observations video...")
-env.gen_vid_from_obs(true_obs, filename=folder_name+"true_observations.mp4", fps=1)
-
-print("Saving decoded observations video...")
-env.gen_vid_from_obs(decoded_obs, filename=folder_name+"decoded_observations.mp4", fps=1)
-
-print("Demo videos generated and saved in the experiment folder.")
-
-
-print(folder_name)
-
+print(f"Demo video generated and saved in {folder_name}/predicted_future.mp4")
 
 env.stop_data_generation()
+print(f"Experiment results saved in {folder_name}")
