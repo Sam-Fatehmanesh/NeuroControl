@@ -17,7 +17,7 @@ class NeuralAutoEncoder(nn.Module):
 
         # self.per_image_latent_size = neuron_count * frame_count
         #self.discrete_latent_catagories_num = discrete_latent_size_sqrt 
-        self.image_n = 96
+        self.image_n = image_n
         self.per_image_discrete_latent_side_size = per_image_discrete_latent_size_sqrt
         self.per_image_latent_size = per_image_discrete_latent_size_sqrt**2
         self.frame_count = frame_count
@@ -105,7 +105,7 @@ class NeuralAutoEncoder(nn.Module):
 
     def decode(self, z):
         batch_dim = z.shape[0]
-
+        #pdb.set_trace()
         z = z.view(batch_dim*self.frame_count, self.per_image_latent_size)
         z = self.decoder(z)
         z = z.view(batch_dim, self.frame_count, self.image_n, self.image_n)
@@ -116,6 +116,7 @@ class NeuralAutoEncoder(nn.Module):
     def forward(self, x):
         batch_dim = x.shape[0]
         
+        #pdb.set_trace()
         x = self.encode(x)
 
 
