@@ -23,25 +23,25 @@ class CarEnv:
         self.observation_space = self.env.observation_space
         
         self.action_size = 5  # Discrete CarRacing has 5 actions
-        self.action_dims = (1,)
+        self.action_dims = (5,)
 
         self.data_buffer = queue.Queue(maxsize=1000)  # Reduced max size due to full episodes
         self.stop_generation = False
         self.pause_generation = threading.Event()
         self.simulation_thread = None
 
-    def preprocess_observation(self, obs):
-        # Convert to grayscale and resize to 280x280
-        obs = cv2.cvtColor(obs, cv2.COLOR_RGB2GRAY)
-        #obs = cv2.resize(obs, (280, 280))
-        return obs
+    def preprocess_observation(self, obs_sequence):
+        processed_sequence = []
+        for obs in obs_sequence:
+            processed_obs = cv2.cvtColor(obs, cv2.COLOR_RGB2GRAY)
+            processed_sequence.append(processed_obs)
+        return np.array(processed_sequence)
 
     def simulation_worker(self):
         while not self.stop_generation:
             self.pause_generation.wait()  # Wait if paused
 
             obs, _ = self.env.reset()
-            obs = self.preprocess_observation(obs)
             
             episode_obs = []
             episode_actions = []
@@ -50,16 +50,38 @@ class CarEnv:
             terminated = False
             truncated = False
 
+            obs_sequence = []
+            action_sequence = []
+            reward_sequence = []
+
             while not (terminated or truncated):
                 action = self.env.action_space.sample()
+                # Turn action from discrete integer into one hot
+                
                 next_obs, reward, terminated, truncated, _ = self.env.step(action)
-                next_obs = self.preprocess_observation(next_obs)
 
-                episode_obs.append(obs)
-                episode_actions.append(action)
-                episode_rewards.append(reward)
+                obs_sequence.append(next_obs)
+                action = np.eye(self.action_size)[action]
+                action_sequence.append(action)
+                reward_sequence.append(reward)
 
-                obs = next_obs
+                if len(obs_sequence) == self.seq_length:
+                    episode_obs.append(self.preprocess_observation(obs_sequence))
+                    episode_actions.append(action_sequence)
+                    episode_rewards.append(reward_sequence)
+                    obs_sequence = []
+                    action_sequence = []
+                    reward_sequence = []
+
+            # Add any remaining partial sequence
+            if obs_sequence:
+                while len(obs_sequence) < self.seq_length:
+                    obs_sequence.append(next_obs)
+                    action_sequence.append(action)
+                    reward_sequence.append(0)  # Pad with zero rewards
+                episode_obs.append(self.preprocess_observation(obs_sequence))
+                episode_actions.append(action_sequence)
+                episode_rewards.append(reward_sequence)
 
             if self.data_buffer.full():
                 self.data_buffer.get()
@@ -97,15 +119,14 @@ class CarEnv:
             episode = random.choice(list(self.data_buffer.queue))
             episode_obs, episode_actions, episode_rewards = episode
 
-            if len(episode_obs) < self.seq_length:
+            if len(episode_obs) < 1:
                 continue  # Skip episodes that are too short
 
-            start_idx = random.randint(0, len(episode_obs) - self.seq_length)
-            end_idx = start_idx + self.seq_length
+            idx = random.randint(0, len(episode_obs) - 1)
 
-            obs_batch.append(episode_obs[start_idx:end_idx])
-            action_batch.append(episode_actions[start_idx:end_idx])
-            reward_batch.append(episode_rewards[start_idx:end_idx])
+            obs_batch.append(episode_obs[idx])
+            action_batch.append(episode_actions[idx])
+            reward_batch.append(episode_rewards[idx])
 
         self.resume_simulation()  # Resume the simulator
 
@@ -132,47 +153,57 @@ class CarEnv:
 
         return obs_batch, action_batch, reward_batch
 
-    def gen_vid_from_obs(self, obs, filename="simulation.mp4", fps=1.0, frame_size=(96, 96)):
-               # Ensure the output directory exists
+    def gen_vid_from_obs(self, obs, filename="simulation.mp4", fps=10.0, frame_size=(96, 96)):
         os.makedirs(os.path.dirname(filename), exist_ok=True)
 
-        # Create a VideoWriter object
         fourcc = cv2.VideoWriter_fourcc(*'mp4v')
         out = cv2.VideoWriter(filename, fourcc, fps, frame_size)
 
-        # Write each frame to the video
-        for frame in obs:
-            # Normalize the frame to 0-255 range
-            frame = frame * 255.0
-            frame = np.clip(frame, 0.0, 255.0)
-            
-            # Remove singleton dimensions if any
-            frame = np.squeeze(frame)
-            
-            # Clip values to 0-255 range and convert to 8-bit unsigned integer
-            frame = np.clip(frame, 0, 255).astype(np.uint8)
-            
-            # If the frame is grayscale, convert it to BGR
-            if frame.ndim == 2:
-                frame = cv2.cvtColor(frame, cv2.COLOR_GRAY2BGR)
-            
-            # Resize the frame if it doesn't match the specified frame_size
-            if frame.shape[:2] != frame_size:
-                frame = cv2.resize(frame, frame_size)
-            
-            # Write the frame to the video
-            out.write(frame)
+        for frame_sequence in obs:
+            for frame in frame_sequence:
+                frame = frame * 255.0
+                frame = np.clip(frame, 0.0, 255.0)
+                
+                frame = np.squeeze(frame)
+                
+                frame = np.clip(frame, 0, 255).astype(np.uint8)
+                
+                if frame.ndim == 2:
+                    frame = cv2.cvtColor(frame, cv2.COLOR_GRAY2BGR)
+                
+                if frame.shape[:2] != frame_size:
+                    frame = cv2.resize(frame, frame_size)
+                
+                out.write(frame)
 
-        # Release the VideoWriter object
         out.release()
 
     def reset(self, seed=None, options=None):
         obs, info = self.env.reset(seed=seed, options=options)
-        return self.preprocess_observation(obs), info
+        obs_sequence = [obs] * self.seq_length  # Repeat the initial observation
+        return self.preprocess_observation(obs_sequence), info
 
     def step(self, action):
-        obs, reward, terminated, truncated, info = self.env.step(action)
-        return self.preprocess_observation(obs), reward, terminated, truncated, info
+        obs_sequence = []
+        total_reward = 0
+        terminated = False
+        truncated = False
+        info = None
+
+        for _ in range(self.seq_length):
+            obs, reward, term, trunc, info = self.env.step(action)
+            obs_sequence.append(obs)
+            total_reward += reward
+            terminated |= term
+            truncated |= trunc
+            if terminated or truncated:
+                break
+
+        # Pad the sequence if it's shorter than seq_length
+        while len(obs_sequence) < self.seq_length:
+            obs_sequence.append(obs)
+
+        return self.preprocess_observation(obs_sequence), total_reward, terminated, truncated, info
 
     def render(self):
         return self.env.render()
