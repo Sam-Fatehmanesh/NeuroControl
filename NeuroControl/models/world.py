@@ -27,11 +27,11 @@ class NeuralWorldModel(nn.Module):
 
         self.image_n = image_n
         self.action_dims = action_dims
-        self.action_size = np.prod(action_dims)
+        self.action_size = np.prod(action_dims) * num_frames_per_step
 
         self.seq_size = num_frames_per_step
 
-        self.image_n = 280
+        self.image_n = image_n
 
         self.hidden_state_size = hidden_state_size
 
@@ -66,63 +66,20 @@ class NeuralWorldModel(nn.Module):
     def forward(self, obs, action, hidden_state):
         batch_dim = obs.shape[0]
 
+        #pdb.set_trace()
+        #pdb.set_trace()
         decoded_obs, obs_lats = self.autoencoder(obs)
         decoded_obs = decoded_obs.view(batch_dim, self.seq_size, self.image_n, self.image_n)
         obs_lats = obs_lats.view(batch_dim, self.seq_obs_latent)
 
-        pred_next_obs_lat, hidden_state = self.state_predictor.forward(obs_lats, action, hidden_state)
+        #print(obs_lats.size(), action.size(), hidden_state.size())
+        
+        pred_next_obs_lat, hidden_state = self.state_predictor.forward(obs_lats, hidden_state, action)
 
         predicted_rewards = self.critic.forward(hidden_state)
 
 
         return decoded_obs, pred_next_obs_lat, obs_lats, hidden_state, predicted_rewards
-
-
-
-    # def predict_states(self, state_0, steps):
-
-    #     #batch_dim = state_0.shape[0]
-
-    #     pred_states = []
-    #     state = state_0
-
-    #     for _ in range(steps):
-    #         state = self.state_predictor(state)
-    #         pred_states.append(state)
-
-    #     return pred_states
-
-    
-
-    # def predict_states_rewards(self, state_0, steps):
-    #     batch_dim = state_0.shape[0]
-
-    #     pred_states = self.predict_states(state_0, steps)
-        
-    #     pred_num = len(pred_states)
-    #     list_pred_states = pred_states
-
-    #     pred_states = torch.stack(pred_states, dim=1).detach()
-
-
-
-    #     pred_rewards = self.critic(pred_states).view(batch_dim, pred_num, 1)
-
-    #     return list_pred_states, pred_rewards
-
-    # def predict_states_rewards_obs(self, state_0, steps):
-        
-    #     list_pred_states, pred_rewards = self.predict_states_rewards(state_0, steps)
-
-    #     pred_obs = self.decode_state(pred_states)
-    #     # Now splits it back into a list
-    #     pred_obs = torch.split(pred_obs, pred_num, dim=0)
-
-    #     return list_pred_states, pred_rewards, pred_obs
-
-    # def predict_reward_from_state(self, state):
-    #     return self.critic(state)
-
 
 
     
