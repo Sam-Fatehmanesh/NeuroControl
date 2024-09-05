@@ -77,7 +77,7 @@ class NeuralWorldModel(nn.Module):
         #print(obs_lats.size(), action.size(), hidden_state.size())
         
         pred_next_obs_lat, hidden_state = self.state_predictor.forward(obs_lats, hidden_state, action)
-        
+
         
 
 
