@@ -45,10 +45,10 @@ class NeuralAutoEncoder(nn.Module):
             CNNLayer(1, 16, cnn_kernel_size),
             nn.AvgPool2d(3, stride=3),
             # Pooled down to 56x56
-            CNNLayer(16, 128, cnn_kernel_size),
+            CNNLayer(16, 64, cnn_kernel_size),
             nn.AvgPool2d(4, stride=4),
             # Pooled down to 14x14
-            CNNLayer(128, 1, cnn_kernel_size),
+            CNNLayer(64, 1, cnn_kernel_size),
             #CNNLayer(128, 1, cnn_kernel_size),
 
             nn.Flatten(),
@@ -56,7 +56,7 @@ class NeuralAutoEncoder(nn.Module):
 
         )
 
-        self.mlp_encoder = MLP(3, self.post_cnn_encoder_size + hidden_state_size, self.per_image_latent_size, self.per_image_latent_size)
+        self.mlp_encoder = MLP(2, self.post_cnn_encoder_size + hidden_state_size, self.per_image_latent_size, self.per_image_latent_size)
 
 
         self.discretizer = nn.Sequential(
@@ -71,15 +71,15 @@ class NeuralAutoEncoder(nn.Module):
         # Decoder
         self.decoder = nn.Sequential(
             
-            MLP(3, self.per_image_latent_size + hidden_state_size, self.per_image_latent_size, self.per_image_latent_size),
+            MLP(2, self.per_image_latent_size + hidden_state_size, self.per_image_latent_size, self.per_image_latent_size),
 
             nn.Unflatten(1, (1, self.per_image_discrete_latent_side_size, self.per_image_discrete_latent_side_size)),
 
-            DeCNNLayer(1, 128, kernel_size=4, stride=4, padding=1),
+            DeCNNLayer(1, 64, kernel_size=4, stride=4, padding=1),
             
-            DeCNNLayer(128, 32, kernel_size=4, stride=4, padding=0),
+            DeCNNLayer(64, 16, kernel_size=4, stride=4, padding=0),
             
-            DeCNNLayer(32, 1, kernel_size=5, stride=5, padding=0),
+            DeCNNLayer(16, 1, kernel_size=5, stride=5, padding=0),
             
             nn.Upsample(size=(self.image_n, self.image_n), mode='bilinear'),
         )
