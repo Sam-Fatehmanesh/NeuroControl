@@ -57,7 +57,7 @@ class CarEnv:
             while not (terminated or truncated):
                 action = self.env.action_space.sample()
                 # Turn action from discrete integer into one hot
-                
+
                 next_obs, reward, terminated, truncated, _ = self.env.step(action)
 
                 obs_sequence.append(next_obs)

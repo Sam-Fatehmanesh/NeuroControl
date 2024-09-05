@@ -12,7 +12,7 @@ from tqdm import tqdm
 
 # An autoencoder for neural video
 class NeuralAutoEncoder(nn.Module):
-    def __init__(self, frame_count, image_n, per_image_discrete_latent_size_sqrt=32, cnn_kernel_size=3):#neuron_count, frame_count):
+    def __init__(self, frame_count, image_n, hidden_state_size, per_image_discrete_latent_size_sqrt=32, cnn_kernel_size=3):#neuron_count, frame_count):
         super(NeuralAutoEncoder, self).__init__()
 
         # self.per_image_latent_size = neuron_count * frame_count
@@ -21,6 +21,7 @@ class NeuralAutoEncoder(nn.Module):
         self.per_image_discrete_latent_side_size = per_image_discrete_latent_size_sqrt
         self.per_image_latent_size = per_image_discrete_latent_size_sqrt**2
         self.frame_count = frame_count
+        self.hidden_state_size = hidden_state_size
 
 
         self.frame_seq_latent_size = self.frame_count*self.per_image_latent_size
@@ -39,7 +40,7 @@ class NeuralAutoEncoder(nn.Module):
         #self.pre_dcnn_decoder_size = 14**2
 
         # Encoder
-        self.encoder = nn.Sequential(
+        self.cnn_encoder = nn.Sequential(
             # 280x280 initial image input
             CNNLayer(1, 16, cnn_kernel_size),
             nn.AvgPool2d(3, stride=3),
@@ -51,9 +52,11 @@ class NeuralAutoEncoder(nn.Module):
             #CNNLayer(128, 1, cnn_kernel_size),
 
             nn.Flatten(),
-            MLP(2, self.post_cnn_encoder_size, self.per_image_latent_size, self.per_image_latent_size),
+            
 
         )
+
+        self.mlp_encoder = MLP(3, self.post_cnn_encoder_size + hidden_state_size, self.per_image_latent_size, self.per_image_latent_size)
 
 
         self.discretizer = nn.Sequential(
@@ -68,7 +71,7 @@ class NeuralAutoEncoder(nn.Module):
         # Decoder
         self.decoder = nn.Sequential(
             
-            MLP(2, self.per_image_latent_size, self.per_image_latent_size, self.per_image_latent_size),
+            MLP(3, self.per_image_latent_size + hidden_state_size, self.per_image_latent_size, self.per_image_latent_size),
 
             nn.Unflatten(1, (1, self.per_image_discrete_latent_side_size, self.per_image_discrete_latent_side_size)),
 
@@ -84,12 +87,16 @@ class NeuralAutoEncoder(nn.Module):
         #self.act = nn.Sigmoid()
 
 
-    def encode(self, x):
+    def encode(self, x, h_t):
         batch_dim = x.shape[0]
 
         x = x.view(batch_dim * self.frame_count, 1, self.image_n, self.image_n)
 
-        x = self.encoder(x)
+        x = self.cnn_encoder(x)
+        h_t = torch.tile(h_t, (self.frame_count, 1))
+        x = torch.cat( (x, h_t), dim=1)
+        x = self.mlp_encoder(x)
+
 
         # Adding noise to make non deterministic
         x = 0.99 * x + 0.01 * (torch.rand(x.shape).to(x.device) - 0.5)
@@ -100,39 +107,43 @@ class NeuralAutoEncoder(nn.Module):
         x = x.view(batch_dim, self.frame_count, self.per_image_latent_size)
 
         
-
+        
         return x
 
-    def decode(self, z):
+    def decode(self, z, h_t):
         batch_dim = z.shape[0]
         #pdb.set_trace()
         z = z.view(batch_dim*self.frame_count, self.per_image_latent_size)
+        h_t = torch.tile(h_t, (self.frame_count, 1))
+        #pdb.set_trace()
+        z = torch.cat( (z, h_t), dim=1)
+
         z = self.decoder(z)
         z = z.view(batch_dim, self.frame_count, self.image_n, self.image_n)
 
 
         return z
     
-    def forward(self, x):
+    def forward(self, x, h_t):
         batch_dim = x.shape[0]
         
         #pdb.set_trace()
-        x = self.encode(x)
+        x = self.encode(x, h_t)
 
 
         latent = x.view(batch_dim, self.frame_count*self.per_image_latent_size)
 
         
 
-        x = self.decode(x)
+        x = self.decode(x, h_t)
 
 
         #x = self.act(x)
 
         return x, latent
 
-    def loss(self, x):
-        x_hat, lats = self.forward(x)
+    def loss(self, x, h_t):
+        x_hat, lats = self.forward(x, h_t)
         #x_hat = x_hat.view(x_hat.shape[0]*x_hat.shape[1], x_hat.shape[2], x_hat.shape[3])
         #x = x.view(x.shape[0]*x.shape[1], x.shape[2], x.shape[3])
         loss = self.Rloss((x_hat), (x))

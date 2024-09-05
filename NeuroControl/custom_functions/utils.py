@@ -55,6 +55,6 @@ def kl_divergence_with_free_bits(q_probs, p_probs, free_bits=1.0):
     kl = q_probs * (torch.log(q_probs + epsilon) - torch.log(p_probs + epsilon))
     
     # Apply free bits
-    kl = torch.max(kl, torch.ones_like(kl) * free_bits)
+    #kl = torch.max(kl, torch.ones_like(kl) * free_bits)
     
     return kl.mean() 

@@ -40,7 +40,7 @@ class NeuralWorldModel(nn.Module):
         self.per_image_discrete_latent_size_sqrt = image_latent_size_sqrt
         self.seq_obs_latent = self.per_image_discrete_latent_size_sqrt**2 * num_frames_per_step
 
-        self.autoencoder = NeuralAutoEncoder(num_frames_per_step, self.image_n, self.per_image_discrete_latent_size_sqrt)
+        self.autoencoder = NeuralAutoEncoder(num_frames_per_step, self.image_n, hidden_state_size, self.per_image_discrete_latent_size_sqrt)
 
         self.state_predictor = NeuralRecurrentDynamicsModel(self.hidden_state_size, self.seq_obs_latent, self.action_size, self.seq_size, self.per_image_discrete_latent_size_sqrt)
 
@@ -57,9 +57,9 @@ class NeuralWorldModel(nn.Module):
     # def auto_pred(self, obs):
     #     return self.obs_autoencoder(obs)
 
-    def encode_obs(self, obs):
+    def encode_obs(self, obs, hidden_state):
         batch_dim = obs.shape[0]
-        z = self.autoencoder.encode(obs)
+        z = self.autoencoder.encode(obs, hidden_state)
         z = z.view(batch_dim, self.seq_obs_latent)
         return z
 
@@ -68,15 +68,17 @@ class NeuralWorldModel(nn.Module):
 
         #pdb.set_trace()
         #pdb.set_trace()
-        decoded_obs, obs_lats = self.autoencoder(obs)
+        predicted_rewards = self.critic.forward(hidden_state)
+
+        decoded_obs, obs_lats = self.autoencoder(obs, hidden_state)
         decoded_obs = decoded_obs.view(batch_dim, self.seq_size, self.image_n, self.image_n)
         obs_lats = obs_lats.view(batch_dim, self.seq_obs_latent)
 
         #print(obs_lats.size(), action.size(), hidden_state.size())
         
         pred_next_obs_lat, hidden_state = self.state_predictor.forward(obs_lats, hidden_state, action)
-
-        predicted_rewards = self.critic.forward(hidden_state)
+        
+        
 
 
         return decoded_obs, pred_next_obs_lat, obs_lats, hidden_state, predicted_rewards

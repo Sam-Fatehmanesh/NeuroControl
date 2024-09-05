@@ -32,12 +32,15 @@ class NeuralRecurrentDynamicsModel(nn.Module):
         # Initial MLP layer
         self.mlp_0 = MLP(4, self.pre_mlp_size, self.pre_post_mamba_size, self.pre_post_mamba_size)
 
+        self.pre_gru_mamba = nn.Sequential(
+            Mamba(self.hidden_mamba_size),
+            Mamba(self.hidden_mamba_size),
+        )
         self.gru = nn.GRUCell(self.pre_post_mamba_size, self.hidden_state_size)
 
         # Mamba layers for sequence processing
         # Input shape: (batch, seq, dim)
         self.mamba = nn.Sequential(
-            Mamba(self.hidden_mamba_size),
             Mamba(self.hidden_mamba_size),
             Mamba(self.hidden_mamba_size),
             #Mamba(self.hidden_mamba_size),
@@ -66,7 +69,9 @@ class NeuralRecurrentDynamicsModel(nn.Module):
         #pdb.set_trace()
         x = self.mlp_0(x)
 
-        h_state_hat = self.gru(x, h_state)
+
+        gru_x = self.pre_gru_mamba(x.view(batch_dim, self.seq_size, self.hidden_mamba_size)).view(batch_dim, self.pre_post_mamba_size)
+        h_state_hat = self.gru(gru_x, h_state)
 
         # Reshape input for Mamba layers
         x = x.view(batch_dim, self.seq_size, self.hidden_mamba_size)
