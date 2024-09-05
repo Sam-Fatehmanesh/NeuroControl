@@ -24,10 +24,10 @@ class NeuralRecurrentDynamicsModel(nn.Module):
         self.pre_mlp_size = hidden_state_size + obs_latent_size + action_size
         #self.hidden_size = 1024
 
-        self.pre_post_mamba_size = 2 ** ((int(self.pre_mlp_size) - 1).bit_length() - 1)
+        self.pre_post_mamba_size = ((2 ** ((int(self.pre_mlp_size) - 1).bit_length() - 1)))
 
         assert self.pre_post_mamba_size % self.seq_size == 0, "per_item_mamba_size must be divisible by 2"
-        self.hidden_mamba_size = self.pre_post_mamba_size // self.seq_size
+        self.hidden_mamba_size = (self.pre_post_mamba_size // self.seq_size)
 
         # Initial MLP layer
         self.mlp_0 = MLP(4, self.pre_mlp_size, self.pre_post_mamba_size, self.pre_post_mamba_size)
