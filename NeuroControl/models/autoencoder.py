@@ -90,7 +90,10 @@ class NeuralAutoEncoder(nn.Module):
     def encode(self, x, h_t):
         batch_dim = x.shape[0]
 
-        x = x.view(batch_dim * self.frame_count, 1, self.image_n, self.image_n)
+        #pdb.set_trace()
+
+        #x = x.view(batch_dim * self.frame_count, 1, self.image_n, self.image_n)
+        x = torch.reshape(x, (batch_dim * self.frame_count, 1, self.image_n, self.image_n))
 
         x = self.cnn_encoder(x)
         h_t = torch.tile(h_t, (self.frame_count, 1))
