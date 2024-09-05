@@ -47,6 +47,7 @@ def kl_divergence_with_free_bits(q_probs, p_probs, free_bits=1.0):
     Returns:
     KL(q||p) for each batch element, clipped at free_bits (B,)
     """
+    batch_dim = q_probs.size(0)
 
     # Add a small epsilon to avoid log(0)
     epsilon = 1e-8
@@ -57,4 +58,4 @@ def kl_divergence_with_free_bits(q_probs, p_probs, free_bits=1.0):
     # Apply free bits
     #kl = torch.max(kl, torch.ones_like(kl) * free_bits)
     
-    return kl.mean() 
+    return kl.mean()

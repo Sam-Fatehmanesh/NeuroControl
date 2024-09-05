@@ -36,7 +36,7 @@ agent = NeuralAgent(num_neurons=16, frames_per_step=frames_per_obs, state_latent
 
 # Pre-training loop
 # Pre-training loop
-num_epochs = 2#512*2#*14
+num_epochs = 512#*2#*14
 batch_size = 8
 losses = []  # List to store loss values
 

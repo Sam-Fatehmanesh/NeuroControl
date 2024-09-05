@@ -81,7 +81,7 @@ class NeuralAgent:
 
         hidden_state = torch.zeros(batch_size, self.state_latent_size)
 
-
+        
         for i in range(batch_length):
             #pdb.set_trace()
             # Takes 
@@ -91,13 +91,15 @@ class NeuralAgent:
 
             # Forward pass through the world model
             #pdb.set_trace()
-            decoded_obs, pred_next_obs_lat, obs_lats, hidden_state, predicted_rewards = self.world_model.forward(obs, actions, hidden_state)
+            decoded_obs, pred_obs_lat, obs_lats, hidden_state, predicted_rewards = self.world_model.forward(obs, actions, hidden_state)
+            
 
             # Compute the loss
             
             representation_loss = F.mse_loss(obs, decoded_obs)
             reward_prediction_loss = F.mse_loss(predicted_rewards, rewards)
-            kl_loss = kl_divergence_with_free_bits(pred_next_obs_lat.detach(), obs_lats) + kl_divergence_with_free_bits(pred_next_obs_lat, obs_lats.detach())
+            kl_loss = kl_divergence_with_free_bits(pred_obs_lat.detach(), obs_lats) + kl_divergence_with_free_bits(pred_obs_lat, obs_lats.detach())
+
 
             #pdb.set_trace()
 
