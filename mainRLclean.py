@@ -18,22 +18,25 @@ os.makedirs(folder_name, exist_ok=True)
 device = torch.device("cuda:0" if torch.cuda.is_available() else "cpu")
 
 # Environment setup
-sequence_length = 8
-env = CarEnv(render_mode=None, device=device, sequence_length=sequence_length)
+sequence_length = 16  # 
+frames_per_obs = 4 # Number of frames to stack for input to the agent
+env = CarEnv(render_mode=None, device=device, frames_per_obs=frames_per_obs, seq_length=sequence_length)
 env.start_data_generation()
 
 print("Generating 10 real seconds worth of data")
 time.sleep(10)
 
+
 # Initialize the agent
-agent = NeuralAgent(num_neurons=16, frames_per_step=sequence_length, state_latent_size=256, steps_per_ep=8, env=env)
+agent = NeuralAgent(num_neurons=16, frames_per_step=frames_per_obs, state_latent_size=1024, steps_per_ep=8, env=env)
+
 
 # agent.pre_training_loss([torch.rand((1,8,96,96)).to(device)],[torch.rand((1,5,)).to(device) > 0.5], [torch.rand((1,8,)).to(device)])
 # print("Done.")
 
 # Pre-training loop
 # Pre-training loop
-num_epochs = 512#*8#*14
+num_epochs = 2#512*2#*14
 batch_size = 8
 losses = []  # List to store loss values
 
@@ -59,8 +62,15 @@ for epoch in tqdm(range(num_epochs)):
     rep_losses.append(representation_loss.item())
     predict_losses.append(reward_prediction_loss.item())
     kl_losses.append(kl_loss.item())
-    
+
+    tqdm.write("--------------------------------------------------")
     tqdm.write(f"Epoch {epoch+1}/{num_epochs}, Loss: {loss.item()}")
+    tqdm.write(f"Representation Loss: {representation_loss.item()}")
+    tqdm.write(f"Reward Prediction Loss: {reward_prediction_loss.item()}")
+    tqdm.write(f"KL Loss: {kl_loss.item()}")
+    tqdm.write("Last Episode Gen/s: "+str(env.current_obs_added_per_s))
+
+    
 
 # Generate and save the loss graph
 plt.figure(figsize=(10, 6))
@@ -149,20 +159,22 @@ n_vids = 1  # Number of videos to generate
 for vid_num in range(n_vids):
     with torch.no_grad():
         # Get an initial observation
-        initial_obs, _, _ = env.sample_buffer(1)
-        initial_obs = torch.tensor(initial_obs, dtype=torch.float32).to(device)
+        obs, _, _ = env.sample_buffer(1)
+        obs = torch.tensor(obs, dtype=torch.float32).to(device)
+        initial_obs = obs[:, 0:frames_per_obs]
 
         init_h_state = torch.zeros(1, agent.state_latent_size).to(device)
         
         # Encode the initial observation
+
         initial_latent = agent.world_model.encode_obs(initial_obs, init_h_state)
         
         # Predict future latents
-        future_steps = 64
+        future_steps = sequence_length
         predicted_latents, saved_h_states = agent.predict_image_latents(future_steps, initial_latent)
         
         # Decode the predicted latents to observations
-        predicted_latents = predicted_latents.view(future_steps, 8, (16**2))
+        predicted_latents = predicted_latents.view(future_steps, frames_per_obs, (16**2))
         saved_h_states = saved_h_states.view(future_steps, agent.state_latent_size)
         predicted_obs = agent.predict_obs(predicted_latents, saved_h_states)
 
@@ -172,7 +184,13 @@ for vid_num in range(n_vids):
         
         # Generate video
         video_filename = f"{folder_name}/predicted_future_{vid_num + 1}.mp4"
-        env.gen_vid_from_obs(predicted_obs, video_filename, fps=10.0, frame_size=(96, 96))
+        env.gen_vid_from_obs(predicted_obs, video_filename, fps=1.0, frame_size=(96, 96))
+        1
+        obs = obs.cpu().numpy()
+        true_video_filename = f"{folder_name}/true_future_{vid_num + 1}.mp4"
+        env.gen_vid_from_obs(obs, true_video_filename, fps=1.0, frame_size=(96, 96))
+
+
 
     print(f"Demo video {vid_num + 1} generated and saved as {video_filename}")
 
@@ -181,55 +199,97 @@ print(f"All {n_vids} demo videos generated and saved in {folder_name}")
 env.stop_data_generation()
 print(f"Experiment results saved in {folder_name}")
 
-print("Generating sequential video...")
+# print("Generating more demo videos...")
+# with torch.no_grad():
 
-with torch.no_grad():
-    # Initialize the environment
-    obs, _ = env.reset()
-    obs = torch.tensor(obs, dtype=torch.float32).unsqueeze(0).to(device)
-    hidden_state = torch.zeros(1, agent.state_latent_size).to(device)
-    
-    # Number of steps to simulate
-    num_steps = 200
-    
-    # Lists to store observations and actions
-    all_obs = [obs.squeeze(0).cpu().numpy()]
-    all_actions = []
-    
-    for _ in range(num_steps):
-        # Get action from the agent
-        action = agent.act(obs, hidden_state)
-        action_index = torch.argmax(action).item()  # Convert to discrete action index
-        all_actions.append(action_index)
-        
-        # Step the environment
-        next_obs, reward, terminated, truncated, _ = env.step(action_index)
-        next_obs = torch.tensor(next_obs, dtype=torch.float32).unsqueeze(0).to(device)
-        
-        # Update hidden state
-        _, _, _, hidden_state, _ = agent.world_model(obs, action.unsqueeze(1), hidden_state)
-        
-        # Store observation
-        all_obs.append(next_obs.squeeze(0).cpu().numpy())
-        
-        # Update current observation
-        obs = next_obs
-        
-        if terminated or truncated:
-            break
-    
-    # Convert lists to numpy arrays
-    all_obs = np.array(all_obs)
-    all_actions = np.array(all_actions)
-    
-    # Generate video
-    video_filename = f"{folder_name}/sequential_simulation.mp4"
-    env.gen_vid_from_obs(all_obs, video_filename, fps=10.0, frame_size=(96, 96))
+#     obs_batch, action_batch, reward_batch = env.sample_buffer(1)
+#     obs_orig = obs_batch
+#     # Convert numpy arrays to PyTorch tensors
+#     obs_batch = torch.tensor(np.array(obs_batch), dtype=torch.float32).to(device)
+#     action_batch = torch.tensor(np.array(action_batch), dtype=torch.float32).to(device)
+#     reward_batch = torch.tensor(np.array(reward_batch), dtype=torch.float32).to(device)
 
-print(f"Sequential simulation video generated and saved as {video_filename}")
+#     decoded_obs_list = agent.world_model_pre_train_forward(obs_batch, action_batch, reward_batch)
 
-# Optionally, you can also save the actions taken during the simulation
-action_filename = f"{folder_name}/sequential_simulation_actions.npy"
-np.save(action_filename, all_actions)
-print(f"Actions taken during the simulation saved as {action_filename}")
 
+#     video_filename = f"{folder_name}/train_style_predicted_future.mp4"
+#     video_filename_true = f"{folder_name}/true_train_style_predicted_future.mp4"
+    
+    
+#     decoded_obs_list = torch.squeeze(decoded_obs_list, dim=0)
+#     decoded_obs_list = decoded_obs_list.cpu().numpy()
+#     env.gen_vid_from_obs(decoded_obs_list, video_filename, fps=1.0, frame_size=(96, 96))
+#     env.gen_vid_from_obs(obs_orig, video_filename_true, fps=1.0, frame_size=(96, 96))
+
+
+
+# print("Generating reconstructed video using world_model_pre_train_forward...")
+
+# # Sample a single episode
+# sampled_obs, sampled_actions, sampled_rewards = env.sample_episodes(1)
+
+# # Ensure we have a sampled episode
+# if sampled_obs is None:
+#     print("Failed to sample an episode. Ensure the data buffer is not empty.")
+# else:
+#     with torch.no_grad():
+#         # Convert sampled observations to tensor and move to device
+#         obs_tensor = torch.tensor(sampled_obs[0], dtype=torch.float32).to(device)
+#         actions_tensor = torch.tensor(sampled_actions[0], dtype=torch.float32).to(device)
+#         rewards_tensor = torch.tensor(sampled_rewards[0], dtype=torch.float32).to(device)
+        
+#         print(f"Obs tensor shape: {obs_tensor.shape}")
+#         print(f"Actions tensor shape: {actions_tensor.shape}")
+#         print(f"Rewards tensor shape: {rewards_tensor.shape}")
+        
+#         # Adjust tensor shapes
+#         if obs_tensor.shape[1] != agent.frames_per_step:
+#             # Reshape obs_tensor to match the expected input shape
+#             obs_tensor = obs_tensor.view(-1, agent.frames_per_step, 96, 96)
+#         obs_tensor = obs_tensor.unsqueeze(0)  # Add batch dimension
+        
+#         if actions_tensor.shape[1] != agent.frames_per_step:
+#             # Reshape actions_tensor to match the expected input shape
+#             actions_tensor = actions_tensor.view(-1, agent.frames_per_step, 5)
+#         actions_tensor = actions_tensor.unsqueeze(0)  # Add batch dimension
+        
+#         if rewards_tensor.shape[1] != agent.frames_per_step:
+#             # Reshape rewards_tensor to match the expected input shape
+#             rewards_tensor = rewards_tensor.view(-1, agent.frames_per_step)
+#         rewards_tensor = rewards_tensor.unsqueeze(0).unsqueeze(-1)  # Add batch and channel dimensions
+        
+#         print(f"Adjusted obs tensor shape: {obs_tensor.shape}")
+#         print(f"Adjusted actions tensor shape: {actions_tensor.shape}")
+#         print(f"Adjusted rewards tensor shape: {rewards_tensor.shape}")
+        
+#         # Get the decoded observations
+#         try:
+#             reconstructed_obs_list = agent.world_model_pre_train_forward(obs_tensor, actions_tensor, rewards_tensor)
+            
+#             # Concatenate the decoded observations
+#             reconstructed_obs = torch.cat(reconstructed_obs_list, dim=1).squeeze(0)
+            
+#             # Move the predictions to CPU for video generation
+#             true_obs = obs_tensor.squeeze(0).cpu().numpy()
+#             reconstructed_obs = reconstructed_obs.cpu().numpy()
+            
+#             # Generate videos
+#             true_video_filename = f"{folder_name}/true_episode.mp4"
+#             reconstructed_video_filename = f"{folder_name}/reconstructed_episode.mp4"
+            
+#             env.gen_vid_from_obs(true_obs, true_video_filename, fps=10.0, frame_size=(96, 96))
+#             env.gen_vid_from_obs(reconstructed_obs, reconstructed_video_filename, fps=10.0, frame_size=(96, 96))
+
+#             print(f"True episode video saved as {true_video_filename}")
+#             print(f"Reconstructed episode video saved as {reconstructed_video_filename}")
+
+#         except Exception as e:
+#             print(f"An error occurred during reconstruction: {str(e)}")
+#             print("Stack trace:")
+#             import traceback
+#             traceback.print_exc()
+
+#     # Optionally, you can also save the actions from the sampled episode
+#     action_filename = f"{folder_name}/sampled_episode_actions.npy"
+#     np.save(action_filename, sampled_actions[0])
+#     print(f"Actions from the sampled episode saved as {action_filename}")
