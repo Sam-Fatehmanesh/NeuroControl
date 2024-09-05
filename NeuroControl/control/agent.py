@@ -46,6 +46,33 @@ class NeuralAgent:
     def act_learn_forward(self, state):
         return self.actor_model(state)
     
+    def world_model_pre_train_forward(self, obs_list, actions_list, rewards_list):
+        total_loss = torch.zeros(1)
+
+        batch_length = obs_list.shape[1] // self.frames_per_step
+        batch_size = obs_list.shape[0]
+
+        hidden_state = torch.zeros(batch_size, self.state_latent_size)
+
+        decoded_obs_list = []
+
+        for i in range(batch_length):
+            # Takes 
+            obs = obs_list[:, self.frames_per_step*i:self.frames_per_step *(i+1) ]
+            actions = actions_list[:, self.frames_per_step*i:self.frames_per_step*(i+1)]
+            rewards = rewards_list[:, self.frames_per_step*i:self.frames_per_step*(i+1)]
+
+            # Forward pass through the world model
+            #pdb.set_trace()
+            decoded_obs, pred_next_obs_lat, obs_lats, hidden_state, predicted_rewards = self.world_model.forward(obs, actions, hidden_state)
+
+            decoded_obs_list.append(decoded_obs)
+
+            #total_loss += representation_loss + reward_prediction_loss + (kl_loss)
+        decoded_obs_list = torch.stack(decoded_obs_list, dim = 0)
+        return decoded_obs_list
+
+
     def pre_training_loss(self, obs_list, actions_list, rewards_list, all_losses = False):
         total_loss = torch.zeros(1)
 
@@ -56,6 +83,7 @@ class NeuralAgent:
 
 
         for i in range(batch_length):
+            #pdb.set_trace()
             # Takes 
             obs = obs_list[:, self.frames_per_step*i:self.frames_per_step *(i+1) ]
             actions = actions_list[:, self.frames_per_step*i:self.frames_per_step*(i+1)]
