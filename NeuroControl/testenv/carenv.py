@@ -6,12 +6,14 @@ import threading
 import queue
 import cv2
 import gymnasium as gym
+import time
 
 class CarEnv:
-    def __init__(self, render_mode=None, device='cpu', sequence_length=10):
+    def __init__(self, render_mode=None, device='cpu', frames_per_obs=10, seq_length=32):
         self.device = device
         self.env = gym.make("CarRacing-v2", render_mode=render_mode, continuous=False)
-        self.seq_length = sequence_length
+        self.frames_per_obs = frames_per_obs
+        self.episode_length = self.frames_per_obs *  seq_length
         
         print("Setting random seeds.")
         seed = 42
@@ -30,6 +32,8 @@ class CarEnv:
         self.pause_generation = threading.Event()
         self.simulation_thread = None
 
+        self.current_obs_added_per_s = 1
+
     def preprocess_observation(self, obs_sequence):
         processed_sequence = []
         for obs in obs_sequence:
@@ -37,9 +41,12 @@ class CarEnv:
             processed_sequence.append(processed_obs)
         return np.array(processed_sequence)
 
+        
     def simulation_worker(self):
         while not self.stop_generation:
             self.pause_generation.wait()  # Wait if paused
+
+            start_time = time.time()
 
             obs, _ = self.env.reset()
             
@@ -58,6 +65,8 @@ class CarEnv:
                 action = self.env.action_space.sample()
                 # Turn action from discrete integer into one hot
 
+                #print(action)
+
                 next_obs, reward, terminated, truncated, _ = self.env.step(action)
 
                 obs_sequence.append(next_obs)
@@ -65,7 +74,7 @@ class CarEnv:
                 action_sequence.append(action)
                 reward_sequence.append(reward)
 
-                if len(obs_sequence) == self.seq_length:
+                if len(obs_sequence) == self.episode_length:
                     episode_obs.append(self.preprocess_observation(obs_sequence))
                     episode_actions.append(action_sequence)
                     episode_rewards.append(reward_sequence)
@@ -75,7 +84,7 @@ class CarEnv:
 
             # Add any remaining partial sequence
             if obs_sequence:
-                while len(obs_sequence) < self.seq_length:
+                while len(obs_sequence) < self.episode_length:
                     obs_sequence.append(next_obs)
                     action_sequence.append(action)
                     reward_sequence.append(0)  # Pad with zero rewards
@@ -86,6 +95,11 @@ class CarEnv:
             if self.data_buffer.full():
                 self.data_buffer.get()
             self.data_buffer.put((episode_obs, episode_actions, episode_rewards))
+
+            end_time = time.time()
+            time_taken = end_time - start_time
+            self.current_obs_added_per_s = len(episode_obs)/ time_taken  # Episodes per second
+
 
     def start_data_generation(self):
         self.stop_generation = False
@@ -180,7 +194,7 @@ class CarEnv:
 
     def reset(self, seed=None, options=None):
         obs, info = self.env.reset(seed=seed, options=options)
-        obs_sequence = [obs] * self.seq_length  # Repeat the initial observation
+        obs_sequence = [obs] * self.frames_per_obs  # Repeat the initial observation
         return self.preprocess_observation(obs_sequence), info
 
     def step(self, action):
@@ -190,7 +204,7 @@ class CarEnv:
         truncated = False
         info = None
 
-        for _ in range(self.seq_length):
+        for _ in range(self.frames_per_obs):
             obs, reward, term, trunc, info = self.env.step(action)
             obs_sequence.append(obs)
             total_reward += reward
@@ -200,7 +214,7 @@ class CarEnv:
                 break
 
         # Pad the sequence if it's shorter than seq_length
-        while len(obs_sequence) < self.seq_length:
+        while len(obs_sequence) < self.frames_per_obs:
             obs_sequence.append(obs)
 
         return self.preprocess_observation(obs_sequence), total_reward, terminated, truncated, info
