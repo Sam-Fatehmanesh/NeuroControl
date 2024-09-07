@@ -58,11 +58,12 @@ class NeuralAutoEncoder(nn.Module):
 
         self.mlp_encoder = MLP(2, self.post_cnn_encoder_size + hidden_state_size, self.per_image_latent_size, self.per_image_latent_size)
 
+        self.softmax_act = nn.Softmax(dim=1)
+        self.sampler = STMNsampler()
 
-        self.discretizer = nn.Sequential(
-            nn.Softmax(dim=1),
-            STMNsampler(),
-        )
+        # self.discretizer = nn.Sequential(
+        #     ,
+        # )
 
 
         
@@ -106,12 +107,17 @@ class NeuralAutoEncoder(nn.Module):
 
 
         x = x.view(batch_dim * self.frame_count * self.per_image_discrete_latent_side_size, self.per_image_discrete_latent_side_size)
-        x = self.discretizer(x)
-        x = x.view(batch_dim, self.frame_count, self.per_image_latent_size)
+        #pdb.set_trace()
+        distributions = self.softmax_act(x)
+
+        sample = self.sampler(distributions)
+
+        sample = sample.view(batch_dim, self.frame_count, self.per_image_latent_size)
+        distributions = distributions.view(batch_dim, self.frame_count, self.per_image_latent_size)
 
         
         
-        return x
+        return sample, distributions
 
     def decode(self, z, h_t):
         batch_dim = z.shape[0]
@@ -131,27 +137,28 @@ class NeuralAutoEncoder(nn.Module):
         batch_dim = x.shape[0]
         
         #pdb.set_trace()
-        x = self.encode(x, h_t)
+        latent_sample, latent_distribution = self.encode(x, h_t)
 
 
-        latent = x.view(batch_dim, self.frame_count*self.per_image_latent_size)
+        latent_sample = latent_sample.view(batch_dim, self.frame_count*self.per_image_latent_size)
+        latent_distribution = latent_distribution.view(batch_dim, self.frame_count*self.per_image_latent_size)
 
         
 
-        x = self.decode(x, h_t)
+        decoded_out = self.decode(latent_sample, h_t)
 
 
         #x = self.act(x)
 
-        return x, latent
+        return decoded_out, latent_sample, latent_distribution
 
-    def loss(self, x, h_t):
-        x_hat, lats = self.forward(x, h_t)
-        #x_hat = x_hat.view(x_hat.shape[0]*x_hat.shape[1], x_hat.shape[2], x_hat.shape[3])
-        #x = x.view(x.shape[0]*x.shape[1], x.shape[2], x.shape[3])
-        loss = self.Rloss((x_hat), (x))
+    # def loss(self, x, h_t):
+    #     x_hat, lats = self.forward(x, h_t)
+    #     #x_hat = x_hat.view(x_hat.shape[0]*x_hat.shape[1], x_hat.shape[2], x_hat.shape[3])
+    #     #x = x.view(x.shape[0]*x.shape[1], x.shape[2], x.shape[3])
+    #     loss = self.Rloss((x_hat), (x))
 
-        return loss, lats
+    #     return loss, lats
 
 
     # def train_step(self, batch, optimizer):

@@ -1,5 +1,6 @@
 import torch
 from torch import nn
+import pdb
 
 class STsampleMultiNom(torch.autograd.Function):
     @staticmethod
@@ -8,11 +9,14 @@ class STsampleMultiNom(torch.autograd.Function):
         ctx.save_for_backward(input)
         
         # Sample from multinomial distribution
+        #pdb.set_trace()
         x = torch.multinomial(input, 1)
         
         # Convert to one-hot encoded vector
         one_hot = torch.zeros_like(input)
         one_hot.scatter_(1, x, 1)
+
+        # replace sampling and one_hot scatter with OneHotCategoricalStraightThrough
 
         return one_hot
 
@@ -50,18 +54,24 @@ def kl_divergence_with_free_bits(q_probs, p_probs, free_bits=1.0):
     batch_dim = q_probs.size(0)
 
     # Add a small epsilon to avoid log(0)
-    epsilon = 1e-8
+    epsilon = 1e-15
     
     # Compute KL divergence
     kld = q_probs * (torch.log(q_probs + epsilon) - torch.log(p_probs + epsilon))
     
     # Apply free bits
+    #fbs = torch.full_like(kld, free_bits)
+    #kld = torch.max(kld, fbs)
+
+
+    
     #kl = torch.max(kl, torch.ones_like(kl) * free_bits)
-    kld = kld.sum() / batch_dim
+    #kld = kld.sum() / batch_dim
 
-    kld = torch.max(kld, torch.tensor(free_bits).to(kld.device))
+    # perform the .max for each element
+    #kld = torch.max(kld, torch.tensor(free_bits).to(kld.device))
 
-    return kld
+    return kld.mean()
 
 
 

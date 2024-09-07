@@ -51,11 +51,12 @@ class NeuralRecurrentDynamicsModel(nn.Module):
         # Final MLP layer
         self.mlp_1 = MLP(1, self.pre_post_mamba_size, self.obs_latent_size, self.obs_latent_size)
 
-
-        self.discretizer = nn.Sequential(
-            nn.Softmax(dim=1),
-            STMNsampler(),
-        )
+        self.softmax_act = nn.Softmax(dim=1)
+        self.sampler = STMNsampler()
+        # self.discretizer = nn.Sequential(
+        #     nn.Softmax(dim=1),
+        #     STMNsampler(),
+        # )
 
     def forward(self, obs_latent, h_state, action):
 
@@ -92,24 +93,11 @@ class NeuralRecurrentDynamicsModel(nn.Module):
         x = self.mlp_1(x)
 
         x = x.view(batch_dim*self.per_image_discrete_latent_size_sqrt * self.seq_size, self.per_image_discrete_latent_size_sqrt)
-        x = self.discretizer(x)
-        obs_latent_hat = x.view(batch_dim, self.obs_latent_size)
+        distributions = self.softmax_act(x)
+        samples = self.sampler(distributions)
+        #x = self.discretizer(x)
+        obs_latent_sample_hat = samples.view(batch_dim, self.obs_latent_size)
+        obs_latent_distribution_hat = distributions.view(batch_dim, self.obs_latent_size)
 
 
-        return obs_latent_hat, h_state_hat
-
-    def loss(self, x, y):
-        # Compute MSE loss between predictions and targets
-        y_pred = self.forward(x)
-        return F.mse_loss(y_pred, y)
-    
-    def train_step(self, x, y, optimizer):
-        # Perform a single training step
-        loss = self.loss(x, y)
-
-        # Backpropagation
-        optimizer.zero_grad()
-        loss.backward()
-        optimizer.step()
-
-        return loss.item()
+        return obs_latent_sample_hat, obs_latent_distribution_hat, h_state_hat

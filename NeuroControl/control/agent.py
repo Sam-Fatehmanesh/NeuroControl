@@ -13,7 +13,7 @@ import pdb
 
 
 class NeuralAgent():
-    def __init__(self, num_neurons, frames_per_step, state_latent_size, steps_per_ep, env):
+    def __init__(self, num_neurons, frames_per_step, state_latent_size, steps_per_ep, env, image_latent_size_sqrt=20):
         self.action_dims = env.action_dims
 
 
@@ -27,7 +27,7 @@ class NeuralAgent():
         self.reward_dims = (5,)
         #self.action_dims = action_dims
 
-        self.image_latent_size_sqrt = 20
+        self.image_latent_size_sqrt = image_latent_size_sqrt
 
         self.seq_obs_latent = self.image_latent_size_sqrt**2 * self.seq_size
 
@@ -39,8 +39,8 @@ class NeuralAgent():
         # Loss function and optimizer
         print("Setting up optimizers.")
         linear_layer_names = [name for name, module in self.world_model.named_modules() if isinstance(module, nn.Linear)]
-        self.optimizer_w = LaProp(self.world_model.parameters(), eps=1e-20, lr=4e-5)
-        self.optimizer_w = AGC(self.world_model.parameters(), self.optimizer_w, model=self.world_model, ignore_agc=linear_layer_names)
+        self.optimizer_w = LaProp(self.world_model.parameters(), eps=1e-20)#, lr=4e-5)
+        #self.optimizer_w = AGC(self.world_model.parameters(), self.optimizer_w, model=self.world_model, ignore_agc=linear_layer_names)
         self.optimizer_a = LaProp(self.actor_model.parameters())
     
     def print_module_names(self):
@@ -71,7 +71,7 @@ class NeuralAgent():
 
             # Forward pass through the world model
             #pdb.set_trace()
-            decoded_obs, pred_next_obs_lat, obs_lats, hidden_state, predicted_rewards = self.world_model.forward(obs, actions, hidden_state)
+            decoded_obs, pred_next_obs_lat, obs_lats, hidden_state, predicted_rewards, obs_lats_dist, pred_obs_lat_dist = self.world_model.forward(obs, actions, hidden_state)
 
             decoded_obs_list.append(decoded_obs)
 
@@ -98,17 +98,16 @@ class NeuralAgent():
 
             # Forward pass through the world model
             #pdb.set_trace()
-            decoded_obs, pred_obs_lat, obs_lats, hidden_state, predicted_rewards = self.world_model.forward(obs, actions, hidden_state)
+            decoded_obs, pred_obs_lat, obs_lats, hidden_state, predicted_rewards, obs_lats_dist, pred_obs_lat_dist = self.world_model.forward(obs, actions, hidden_state)
             
 
             # Compute the loss
             
-            representation_loss = F.mse_loss(obs, decoded_obs) * 16
-            reward_prediction_loss = F.mse_loss(predicted_rewards, rewards)
-            kl_loss = kl_divergence_with_free_bits(pred_obs_lat.detach(), obs_lats) + kl_divergence_with_free_bits(pred_obs_lat, obs_lats.detach()) 
-            #kl_loss *= 10
+            representation_loss = F.mse_loss(obs, decoded_obs)# * 16
+            reward_prediction_loss = F.mse_loss(predicted_rewards, rewards) * 0.0
+            #kl_loss = kl_divergence_with_free_bits(pred_obs_lat.detach(), obs_lats) + kl_divergence_with_free_bits(pred_obs_lat, obs_lats.detach()) 
+            kl_loss = kl_divergence_with_free_bits(pred_obs_lat_dist.detach(), obs_lats_dist) + kl_divergence_with_free_bits(pred_obs_lat_dist, obs_lats_dist.detach()) 
 
-            #pdb.set_trace()
 
             total_loss += representation_loss + reward_prediction_loss + (kl_loss)
         
@@ -133,7 +132,7 @@ class NeuralAgent():
         for _ in range(steps):
             action = torch.rand(batch_dim, self.seq_size, *self.action_dims)
             #pdb.set_trace()
-            latent, h_state = self.world_model.state_predictor.forward(latent, h_state, action)
+            latent, latent_distribution, h_state = self.world_model.state_predictor.forward(latent, h_state, action)
             saved_h_states = torch.cat((saved_h_states, h_state.unsqueeze(1)), dim=1)
             pred_image_latents = torch.cat((pred_image_latents, latent.unsqueeze(1)), dim=1)
 
