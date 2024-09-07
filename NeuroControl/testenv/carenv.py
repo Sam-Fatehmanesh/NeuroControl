@@ -9,9 +9,15 @@ import gymnasium as gym
 import time
 
 class CarEnv:
-    def __init__(self, render_mode=None, device='cpu', frames_per_obs=10, seq_length=32):
+    def __init__(self, render_mode=None, device='cpu', frames_per_obs=10, seq_length=32, continuous=False):
         self.device = device
-        self.env = gym.make("CarRacing-v2", render_mode=render_mode, continuous=False)
+        self.env = None
+        self.continuous = continuous
+        if continuous:
+            self.env = gym.make("CarRacing-v2", render_mode=render_mode, continuous=True)
+        else:
+            self.env = gym.make("CarRacing-v2", render_mode=render_mode, continuous=False)
+
         self.frames_per_obs = frames_per_obs
         self.episode_length = self.frames_per_obs *  seq_length
         
@@ -24,8 +30,13 @@ class CarEnv:
         self.action_space = self.env.action_space
         self.observation_space = self.env.observation_space
         
-        self.action_size = 5  # Discrete CarRacing has 5 actions
-        self.action_dims = (5,)
+        if continuous:
+            self.action_size = 3
+            self.action_dims = (3,)
+        else:
+            self.action_size = 5  # Discrete CarRacing has 5 actions
+            self.action_dims = (5,)
+        
 
         self.data_buffer = queue.Queue(maxsize=1000)  # Reduced max size due to full episodes
         self.stop_generation = False
@@ -61,8 +72,13 @@ class CarEnv:
             action_sequence = []
             reward_sequence = []
 
-            while not (terminated or truncated):
+            while (not (terminated or truncated)):
                 action = self.env.action_space.sample()
+                if self.continuous:
+                    action[1] = 1.0
+                    action[2] = 0.0
+                else:
+                    action = 3  # Always go straight
                 # Turn action from discrete integer into one hot
 
                 #print(action)
@@ -70,7 +86,11 @@ class CarEnv:
                 next_obs, reward, terminated, truncated, _ = self.env.step(action)
 
                 obs_sequence.append(next_obs)
-                action = np.eye(self.action_size)[action]
+                
+                action = np.array(action)
+                if not self.continuous:
+                    action = np.eye(self.action_size)[action]
+
                 action_sequence.append(action)
                 reward_sequence.append(reward)
 
@@ -81,6 +101,7 @@ class CarEnv:
                     obs_sequence = []
                     action_sequence = []
                     reward_sequence = []
+                    break
 
             # Add any remaining partial sequence
             if obs_sequence:

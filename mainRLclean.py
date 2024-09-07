@@ -18,17 +18,17 @@ os.makedirs(folder_name, exist_ok=True)
 device = torch.device("cuda:0" if torch.cuda.is_available() else "cpu")
 
 # Environment setup
-sequence_length = 16  # 
-frames_per_obs = 4 # Number of frames to stack for input to the agent
+sequence_length = 8  # 
+frames_per_obs = 8 # Number of frames to stack for input to the agent
 env = CarEnv(render_mode=None, device=device, frames_per_obs=frames_per_obs, seq_length=sequence_length)
 env.start_data_generation()
 
 print("Generating 10 real seconds worth of data")
 time.sleep(10)
 
-
+image_latent_size_sqrt = 20
 # Initialize the agent
-agent = NeuralAgent(num_neurons=16, frames_per_step=frames_per_obs, state_latent_size=1024, steps_per_ep=8, env=env)
+agent = NeuralAgent(num_neurons=16, frames_per_step=frames_per_obs, state_latent_size=128*6, steps_per_ep=8, env=env, image_latent_size_sqrt=image_latent_size_sqrt)
 
 
 # agent.pre_training_loss([torch.rand((1,8,96,96)).to(device)],[torch.rand((1,5,)).to(device) > 0.5], [torch.rand((1,8,)).to(device)])
@@ -36,8 +36,8 @@ agent = NeuralAgent(num_neurons=16, frames_per_step=frames_per_obs, state_latent
 
 # Pre-training loop
 # Pre-training loop
-num_epochs = 512#*2#*14
-batch_size = 8
+num_epochs = 512*2*20#*12#*14
+batch_size = 10
 losses = []  # List to store loss values
 
 rep_losses = []
@@ -68,7 +68,7 @@ for epoch in tqdm(range(num_epochs)):
     tqdm.write(f"Representation Loss: {representation_loss.item()}")
     tqdm.write(f"Reward Prediction Loss: {reward_prediction_loss.item()}")
     tqdm.write(f"KL Loss: {kl_loss.item()}")
-    tqdm.write("Last Episode Gen/s: "+str(env.current_obs_added_per_s))
+    tqdm.write("Obs Gen/s: " + str(env.current_obs_added_per_s))
 
     
 
@@ -174,7 +174,7 @@ for vid_num in range(n_vids):
         predicted_latents, saved_h_states = agent.predict_image_latents(future_steps, initial_latent)
         
         # Decode the predicted latents to observations
-        predicted_latents = predicted_latents.view(future_steps, frames_per_obs, (16**2))
+        predicted_latents = predicted_latents.view(future_steps, frames_per_obs, (image_latent_size_sqrt**2))
         saved_h_states = saved_h_states.view(future_steps, agent.state_latent_size)
         predicted_obs = agent.predict_obs(predicted_latents, saved_h_states)
 
@@ -185,7 +185,7 @@ for vid_num in range(n_vids):
         # Generate video
         video_filename = f"{folder_name}/predicted_future_{vid_num + 1}.mp4"
         env.gen_vid_from_obs(predicted_obs, video_filename, fps=1.0, frame_size=(96, 96))
-        1
+        
         obs = obs.cpu().numpy()
         true_video_filename = f"{folder_name}/true_future_{vid_num + 1}.mp4"
         env.gen_vid_from_obs(obs, true_video_filename, fps=1.0, frame_size=(96, 96))
@@ -199,27 +199,28 @@ print(f"All {n_vids} demo videos generated and saved in {folder_name}")
 env.stop_data_generation()
 print(f"Experiment results saved in {folder_name}")
 
-# print("Generating more demo videos...")
-# with torch.no_grad():
+print("Generating more demo videos...")
+with torch.no_grad():
 
-#     obs_batch, action_batch, reward_batch = env.sample_buffer(1)
-#     obs_orig = obs_batch
-#     # Convert numpy arrays to PyTorch tensors
-#     obs_batch = torch.tensor(np.array(obs_batch), dtype=torch.float32).to(device)
-#     action_batch = torch.tensor(np.array(action_batch), dtype=torch.float32).to(device)
-#     reward_batch = torch.tensor(np.array(reward_batch), dtype=torch.float32).to(device)
+    obs_batch, action_batch, reward_batch = env.sample_buffer(1)
+    obs_orig = obs_batch
+    # Convert numpy arrays to PyTorch tensors
+    obs_batch = torch.tensor(np.array(obs_batch), dtype=torch.float32).to(device)
+    action_batch = torch.tensor(np.array(action_batch), dtype=torch.float32).to(device)
+    reward_batch = torch.tensor(np.array(reward_batch), dtype=torch.float32).to(device)
 
-#     decoded_obs_list = agent.world_model_pre_train_forward(obs_batch, action_batch, reward_batch)
+    decoded_obs_list = agent.world_model_pre_train_forward(obs_batch, action_batch, reward_batch)
 
 
-#     video_filename = f"{folder_name}/train_style_predicted_future.mp4"
-#     video_filename_true = f"{folder_name}/true_train_style_predicted_future.mp4"
+    video_filename = f"{folder_name}/train_style_predicted_future.mp4"
+    video_filename_true = f"{folder_name}/true_train_style_predicted_future.mp4"
     
+    #pdb.set_trace()
+    decoded_obs_list = torch.squeeze(decoded_obs_list, dim=1)
+    decoded_obs_list = decoded_obs_list.cpu().numpy()
     
-#     decoded_obs_list = torch.squeeze(decoded_obs_list, dim=0)
-#     decoded_obs_list = decoded_obs_list.cpu().numpy()
-#     env.gen_vid_from_obs(decoded_obs_list, video_filename, fps=1.0, frame_size=(96, 96))
-#     env.gen_vid_from_obs(obs_orig, video_filename_true, fps=1.0, frame_size=(96, 96))
+    env.gen_vid_from_obs(decoded_obs_list, video_filename, fps=1.0, frame_size=(96, 96))
+    env.gen_vid_from_obs(obs_orig, video_filename_true, fps=1.0, frame_size=(96, 96))
 
 
 
