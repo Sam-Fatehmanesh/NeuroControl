@@ -2,9 +2,7 @@ import torch
 import torch.nn as nn
 import torch.nn.functional as F
 import numpy as np
-from NeuroControl.models.transcnn import TransCNN
 from NeuroControl.models.mlp import MLP
-from NeuroControl.models.encoder import SpikePositionEncoding
 from mamba_ssm import Mamba2
 import pdb
 

@@ -2,12 +2,7 @@ import torch
 import torch.nn as nn
 import torch.nn.functional as F
 import numpy as np
-from NeuroControl.models.neuraloperator import FNOPredictor
-from NeuroControl.models.transcnn import TransCNN
 from NeuroControl.models.cnn import CNNLayer, DeCNNLayer
-from NeuroControl.models.transformer import Transformer
-from NeuroControl.models.encoder import SpikePositionEncoding
-from NeuroControl.models.moe import MoEPredictor
 from NeuroControl.models.mlp import MLP
 from NeuroControl.models.critic import NeuralControlCritic
 from NeuroControl.models.dynamics_predictor import NeuralRecurrentDynamicsModel

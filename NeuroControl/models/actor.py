@@ -2,8 +2,6 @@ import torch
 import torch.nn as nn
 import torch.nn.functional as F
 import numpy as np
-from NeuroControl.models.transcnn import TransCNN
-from NeuroControl.models.transformer import Transformer
 from NeuroControl.models.mlp import MLP
 from mamba_ssm import Mamba2 as Mamba
 import pdb
