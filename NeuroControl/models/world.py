@@ -29,7 +29,7 @@ class NeuralWorldModel(nn.Module):
         self.action_dims = action_dims
         self.action_size = np.prod(action_dims) * num_frames_per_step
 
-        self.seq_size = num_frames_per_step
+        self.frames_per_obs = num_frames_per_step
 
         self.image_n = image_n
 
@@ -38,14 +38,14 @@ class NeuralWorldModel(nn.Module):
 
 
         self.per_image_discrete_latent_size_sqrt = image_latent_size_sqrt
-        self.seq_obs_latent = self.per_image_discrete_latent_size_sqrt**2 * num_frames_per_step
+        self.seq_obs_latent = self.per_image_discrete_latent_size_sqrt**2 * self.frames_per_obs
 
         self.autoencoder = NeuralAutoEncoder(num_frames_per_step, self.image_n, hidden_state_size, self.per_image_discrete_latent_size_sqrt)
 
-        self.state_predictor = NeuralRecurrentDynamicsModel(self.hidden_state_size, self.seq_obs_latent, self.action_size, self.seq_size, self.per_image_discrete_latent_size_sqrt)
+        self.state_predictor = NeuralRecurrentDynamicsModel(self.hidden_state_size, self.seq_obs_latent, self.action_size, self.frames_per_obs, self.per_image_discrete_latent_size_sqrt)
 
-        self.critic = NeuralControlCritic(self.hidden_state_size, self.seq_size, self.seq_size)
-        
+        self.critic = NeuralControlCritic(self.hidden_state_size, self.frames_per_obs, self.frames_per_obs)
+
 
 
     def encode_obs(self, obs, hidden_state):
@@ -60,19 +60,16 @@ class NeuralWorldModel(nn.Module):
         #pdb.set_trace()
         #pdb.set_trace()
         
-
+        predicted_rewards = self.critic.forward(hidden_state)
         decoded_obs, obs_lats_sample, obs_lats_dist = self.autoencoder(obs, hidden_state)
-        decoded_obs = decoded_obs.view(batch_dim, self.seq_size, self.image_n, self.image_n)
+        decoded_obs = decoded_obs.view(batch_dim, self.frames_per_obs, self.image_n, self.image_n)
         obs_lats_sample = obs_lats_sample.view(batch_dim, self.seq_obs_latent)
-
-        #print(obs_lats.size(), action.size(), hidden_state.size())
+        
+        
         
         pred_obs_lat_sample, pred_obs_lat_dist, hidden_state = self.state_predictor.forward(obs_lats_sample, hidden_state, action)
 
-        predicted_rewards = self.critic.forward(hidden_state)
-
         
-
 
         return decoded_obs, pred_obs_lat_sample, obs_lats_sample, hidden_state, predicted_rewards, obs_lats_dist, pred_obs_lat_dist
 
