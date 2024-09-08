@@ -6,27 +6,35 @@ from NeuroControl.custom_functions.utils import RMSNorm
 class MLP(nn.Module):
     def __init__(self, layers_num, input_size, hidden_size, output_size):
         super(MLP, self).__init__()
-        self.layers = nn.Sequential()
+        self.input_layer = nn.Linear(input_size, hidden_size)
+        self.input_norm = RMSNorm(hidden_size)
+        self.input_activation = nn.GELU()
 
-        # Add input layer
-        self.layers.add_module('input_layer', nn.Linear(input_size, hidden_size))
-        # Add activation function after input layer
-        self.layers.add_module('layer norm_0', RMSNorm(hidden_size))
-        # Add activation function after input layer
-        self.layers.add_module('activation_0', nn.GELU())
+        self.hidden_layers = nn.ModuleList()
+        for _ in range(layers_num - 1):
+            layer = nn.Sequential(
+                nn.Linear(hidden_size, hidden_size),
+                RMSNorm(hidden_size),
+                nn.GELU()
+            )
+            self.hidden_layers.append(layer)
 
-        # Add hidden layers
-        for i in range(1, layers_num):
-            self.layers.add_module(f'hidden_layer_{i}', nn.Linear(hidden_size, hidden_size))
+        self.output_layer = nn.Linear(hidden_size, output_size)
 
-            self.layers.add_module(f'layer norm_{i}', RMSNorm(hidden_size))
-
-            # Add activation function after each hidden layer
-            self.layers.add_module(f'activation_{i}', nn.GELU())
-
-        # Add output layer
-        self.layers.add_module('output_layer', nn.Linear(hidden_size, output_size))
-        
-        
     def forward(self, x):
-        return self.layers(x)
+        # Input layer
+        x = self.input_layer(x)
+        residual = x
+        x = self.input_norm(x)
+        x = self.input_activation(x)
+
+        # Hidden layers with residual connections
+        for layer in self.hidden_layers:
+            x = residual + layer(x)
+            residual = x
+
+
+        # Output layer
+        x = self.output_layer(x)
+
+        return x
