@@ -12,8 +12,10 @@ from NeuroControl.custom_functions.agc import AGC
 import pdb
 
 
-class NeuralAgent():
+class NeuralAgent(nn.Module):
     def __init__(self, num_neurons, frames_per_step, state_latent_size, steps_per_ep, env, image_latent_size_sqrt=20):
+        super(NeuralAgent, self).__init__()
+
         self.action_dims = env.action_dims
 
 
@@ -106,7 +108,7 @@ class NeuralAgent():
             representation_loss = F.mse_loss(obs, decoded_obs)# * 16
             reward_prediction_loss = F.mse_loss(predicted_rewards, rewards) * 0.0
             #kl_loss = kl_divergence_with_free_bits(pred_obs_lat.detach(), obs_lats) + kl_divergence_with_free_bits(pred_obs_lat, obs_lats.detach()) 
-            kl_loss = kl_divergence_with_free_bits(pred_obs_lat_dist.detach(), obs_lats_dist) + kl_divergence_with_free_bits(pred_obs_lat_dist, obs_lats_dist.detach()) 
+            kl_loss = kl_divergence_with_free_bits(obs_lats_dist.detach(), pred_obs_lat_dist) + kl_divergence_with_free_bits(obs_lats_dist, pred_obs_lat_dist.detach()) 
 
 
             total_loss += representation_loss + reward_prediction_loss + (kl_loss)
@@ -152,3 +154,10 @@ class NeuralAgent():
 
         return obs
         
+    def save_checkpoint(self, path):
+        torch.save(self.state_dict(), path)
+
+    # Saves a text file containing the model turned into a string
+    def save_str_file_arch(self, path):
+        with open(path, 'w') as f:
+            f.write(str(self))
