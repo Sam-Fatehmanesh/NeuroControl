@@ -40,8 +40,9 @@ class CNNLayer(nn.Module):
 
 # Deconvolutional layer
 class DeCNNLayer(nn.Module):
-    def __init__(self, in_channels, out_channels, kernel_size, stride=1, padding=1):
+    def __init__(self, in_channels, out_channels, kernel_size, stride=1, padding=1, last_act=True):
         super(DeCNNLayer, self).__init__()
+        self.last_act = last_act
         self.deconv1 = nn.ConvTranspose2d(in_channels, out_channels, kernel_size, stride, padding)
         self.batchnorm1 = nn.BatchNorm2d(out_channels)
         self.batchnorm2 = nn.BatchNorm2d(out_channels)
@@ -64,8 +65,8 @@ class DeCNNLayer(nn.Module):
         x = self.batchnorm2(x)
         #pdb.set_trace()
         #x += self.match_dimensions(res)
-
-        x = self.activation2(x)
+        if self.last_act:
+            x = self.activation2(x)
 
         return x
 
