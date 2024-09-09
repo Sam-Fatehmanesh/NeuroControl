@@ -47,7 +47,7 @@ class DeCNNLayer(nn.Module):
         self.batchnorm2 = nn.BatchNorm2d(out_channels)
         self.activation1 = nn.GELU()
         self.activation2 = nn.GELU()
-        self.deconv2 = nn.ConvTranspose2d(out_channels, out_channels, 3, 1, 1)
+        self.deconv2 = nn.Conv2d(out_channels, out_channels, 3, 1, 1)
         #self.match_dimensions = nn.ConvTranspose2d(in_channels, out_channels, kernel_size=kernel_size, stride=1, padding=0)
 
     def forward(self, x):

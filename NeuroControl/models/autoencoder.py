@@ -31,32 +31,26 @@ class NeuralAutoEncoder(nn.Module):
         # self.channel_out = self.per_image_latent_size // self.frame_count
 
 
-
-        self.KLloss = nn.KLDivLoss(reduction='mean') 
-        self.Rloss = nn.MSELoss()
-
-        self.post_cnn_encoder_size = 8**2#14**2
+        self.post_cnn_encoder_size_sqrt = 8
+        self.post_cnn_encoder_size = self.post_cnn_encoder_size_sqrt**2#14**2
 
         #self.pre_dcnn_decoder_size = 14**2
 
         # Encoder
         self.cnn_encoder = nn.Sequential(
-            # 280x280 initial image input
             CNNLayer(1, 16, cnn_kernel_size),
-            nn.AvgPool2d(3, stride=3),
-            # Pooled down to 56x56
+            nn.MaxPool2d(3, stride=3),
+
             CNNLayer(16, 64, cnn_kernel_size),
-            nn.AvgPool2d(4, stride=4),
-            # Pooled down to 14x14
+            nn.MaxPool2d(2, stride=2),
+
             CNNLayer(64, 1, cnn_kernel_size),
-            #CNNLayer(128, 1, cnn_kernel_size),
+            nn.MaxPool2d(2, stride=2),
 
             nn.Flatten(),
-            
-
         )
 
-        self.mlp_encoder = MLP(2, self.post_cnn_encoder_size + hidden_state_size, self.per_image_latent_size, self.per_image_latent_size)
+        self.mlp_encoder = MLP(3, self.post_cnn_encoder_size + hidden_state_size, self.per_image_latent_size, self.per_image_latent_size)
 
         self.softmax_act = nn.Softmax(dim=1)
         self.sampler = STMNsampler()
@@ -72,18 +66,21 @@ class NeuralAutoEncoder(nn.Module):
         # Decoder
         self.decoder = nn.Sequential(
             
-            MLP(2, self.per_image_latent_size + hidden_state_size, self.per_image_latent_size, self.per_image_latent_size),
+            MLP(3, self.per_image_latent_size + hidden_state_size, self.per_image_latent_size, self.post_cnn_encoder_size),
+            
+            nn.Unflatten(1, (1, self.post_cnn_encoder_size_sqrt, self.post_cnn_encoder_size_sqrt)),
 
-            nn.Unflatten(1, (1, self.per_image_discrete_latent_side_size, self.per_image_discrete_latent_side_size)),
+            DeCNNLayer(1, 64, kernel_size=3, stride=3, padding=0),
 
-            DeCNNLayer(1, 64, kernel_size=4, stride=4, padding=1),
+            DeCNNLayer(64, 16, kernel_size=2, stride=2, padding=0),
+
+            DeCNNLayer(16, 1, kernel_size=2, stride=2, padding=0),
             
-            DeCNNLayer(64, 16, kernel_size=4, stride=4, padding=0),
             
-            DeCNNLayer(16, 1, kernel_size=5, stride=5, padding=0),
-            
-            nn.Upsample(size=(self.image_n, self.image_n), mode='bilinear'),
+            #nn.Sigmoid(),
         )
+
+        #self.decode_upsample = nn.Upsample(size=(self.image_n, self.image_n), mode='bilinear')
 
         #self.act = nn.Sigmoid()
 
@@ -97,6 +94,7 @@ class NeuralAutoEncoder(nn.Module):
         x = torch.reshape(x, (batch_dim * self.frame_count, 1, self.image_n, self.image_n))
 
         x = self.cnn_encoder(x)
+        #pdb.set_trace()
         h_t = torch.tile(h_t, (self.frame_count, 1))
         x = torch.cat( (x, h_t), dim=1)
         x = self.mlp_encoder(x)
@@ -128,6 +126,8 @@ class NeuralAutoEncoder(nn.Module):
         z = torch.cat( (z, h_t), dim=1)
 
         z = self.decoder(z)
+        #pdb.set_trace()
+        #z = self.decode_upsample(z)
         z = z.view(batch_dim, self.frame_count, self.image_n, self.image_n)
 
 
