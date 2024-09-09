@@ -38,7 +38,7 @@ class NeuralRecurrentDynamicsModel(nn.Module):
 
         self.pre_gru_mamba = nn.Sequential(
             Mamba(self.hidden_mamba_size),
-            Mamba(self.hidden_mamba_size),
+            #Mamba(self.hidden_mamba_size),
         )
         self.gru = nn.GRUCell(self.pre_post_mamba_size, self.hidden_state_size)
 
@@ -47,13 +47,13 @@ class NeuralRecurrentDynamicsModel(nn.Module):
         self.pre_z_pred_mamba_mlp = MLP(2, self.hidden_state_size, self.pre_post_mamba_size, self.pre_post_mamba_size)
         self.z_pred_mamba = nn.Sequential(
             Mamba(self.hidden_mamba_size),
-            Mamba(self.hidden_mamba_size),
+            #Mamba(self.hidden_mamba_size),
             #Mamba(self.hidden_mamba_size),
         )
 
 
         # Final MLP layer
-        self.mlp_1 = MLP(1, self.pre_post_mamba_size, self.obs_latent_size, self.obs_latent_size)
+        self.mlp_1 = MLP(2, self.pre_post_mamba_size, self.obs_latent_size, self.obs_latent_size)
 
         self.softmax_act = nn.Softmax(dim=1)
         self.sampler = STMNsampler()
