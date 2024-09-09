@@ -36,6 +36,8 @@ class NeuralAutoEncoder(nn.Module):
 
         #self.pre_dcnn_decoder_size = 14**2
 
+
+        # When with culture use padding = 4 for first cnn layer for 288x288
         # Encoder
         self.cnn_encoder = nn.Sequential(
             CNNLayer(1, 16, cnn_kernel_size),
@@ -74,10 +76,10 @@ class NeuralAutoEncoder(nn.Module):
 
             DeCNNLayer(64, 16, kernel_size=2, stride=2, padding=0),
 
-            DeCNNLayer(16, 1, kernel_size=2, stride=2, padding=0),
+            DeCNNLayer(16, 1, kernel_size=2, stride=2, padding=0, last_act=False),
             
             
-            #nn.Sigmoid(),
+            nn.Sigmoid(),
         )
 
         #self.decode_upsample = nn.Upsample(size=(self.image_n, self.image_n), mode='bilinear')
