@@ -26,9 +26,10 @@ env.start_data_generation()
 print("Generating 10 real seconds worth of data")
 time.sleep(10)
 
-image_latent_size_sqrt = 20
+image_latent_size_sqrt = 32
 # Initialize the agent
-agent = NeuralAgent(num_neurons=16, frames_per_step=frames_per_obs, state_latent_size=128*6, steps_per_ep=8, env=env, image_latent_size_sqrt=image_latent_size_sqrt)
+agent = NeuralAgent(num_neurons=16, frames_per_step=frames_per_obs, state_latent_size=512, steps_per_ep=8, env=env, image_latent_size_sqrt=image_latent_size_sqrt)
+agent.save_str_file_arch(folder_name + "pre_trained_agent.txt")
 
 
 # agent.pre_training_loss([torch.rand((1,8,96,96)).to(device)],[torch.rand((1,5,)).to(device) > 0.5], [torch.rand((1,8,)).to(device)])
@@ -36,8 +37,8 @@ agent = NeuralAgent(num_neurons=16, frames_per_step=frames_per_obs, state_latent
 
 # Pre-training loop
 # Pre-training loop
-num_epochs = 512*2*20#*12#*14
-batch_size = 10
+num_epochs = 1024*5#512*2*20#*12#*14
+batch_size = 16
 losses = []  # List to store loss values
 
 rep_losses = []
@@ -57,6 +58,8 @@ for epoch in tqdm(range(num_epochs)):
     agent.optimizer_w.zero_grad()
     loss.backward()
     agent.optimizer_w.step()
+
+    agent.update_critic_ema_model()
     
     losses.append(loss.item())  # Store the loss value
     rep_losses.append(representation_loss.item())
@@ -127,6 +130,8 @@ with open(csv_filename, 'w', newline='') as csvfile:
         csvwriter.writerow([i+1, total, rep, pred, kl])
 
 print(f"Losses saved to {csv_filename}")
+
+agent.save_checkpoint(folder_name + "pre_trained_agent.pth")
 
 # # Test the dynamics predictor
 # def generate_future_video(agent, initial_obs, num_steps, filename):
