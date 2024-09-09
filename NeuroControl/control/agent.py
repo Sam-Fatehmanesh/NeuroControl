@@ -42,7 +42,7 @@ class NeuralAgent(nn.Module):
         print("Setting up optimizers.")
         linear_layer_names = [name for name, module in self.world_model.named_modules() if isinstance(module, nn.Linear)]
         self.optimizer_w = LaProp(self.world_model.parameters(), eps=1e-20)#, lr=4e-5)
-        #self.optimizer_w = AGC(self.world_model.parameters(), self.optimizer_w, model=self.world_model, ignore_agc=linear_layer_names)
+        self.optimizer_w = AGC(self.world_model.parameters(), self.optimizer_w, model=self.world_model, ignore_agc=linear_layer_names)
         self.optimizer_a = LaProp(self.actor_model.parameters())
     
     def print_module_names(self):
@@ -105,12 +105,14 @@ class NeuralAgent(nn.Module):
 
             # Compute the loss
             
-            representation_loss = F.mse_loss(obs, decoded_obs)# * 16
+            representation_loss = F.binary_cross_entropy(decoded_obs, obs) #F.mse_loss(obs, decoded_obs)# * 16
             reward_prediction_loss = 0.0*(F.mse_loss(predicted_rewards, rewards) + F.mse_loss(predicted_rewards_ema, predicted_rewards))
             #kl_loss = kl_divergence_with_free_bits(pred_obs_lat.detach(), obs_lats) + kl_divergence_with_free_bits(pred_obs_lat, obs_lats.detach()) 
             kl_loss = kl_divergence_with_free_bits(obs_lats_dist.detach(), pred_obs_lat_dist) + kl_divergence_with_free_bits(obs_lats_dist, pred_obs_lat_dist.detach()) 
 
-
+            if i == 0:
+                reward_prediction_loss *= 0
+                
             total_loss += representation_loss + reward_prediction_loss + (kl_loss)
         
         if all_losses:
