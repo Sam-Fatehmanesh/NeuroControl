@@ -5,7 +5,7 @@ import numpy as np
 from NeuroControl.models.mlp import MLP
 from mamba_ssm import Mamba2
 import pdb
-
+import copy
 
 class NeuralControlCritic(nn.Module):
     def __init__(self, hidden_state_size, mamba_seq_size, reward_size):
@@ -31,26 +31,36 @@ class NeuralControlCritic(nn.Module):
         #self.pre_mlp_flat = nn.Flatten(start_dim=0)
         self.mlp_out = MLP(1, self.hidden_size*self.mamba_seq_size, self.hidden_size, reward_size)
 
+        self.ema_critic = copy.deepcopy(self)
+        self.ema_decay = 0.98
 
-    def forward(self, x):#, steps_left, current_r):
+
+    def forward(self, x):
         batch_dim = x.shape[0]
 
-        # x = x.clone()
-        # x[:,:,0] = steps_left
-        # x[:,:,1] = current_r
-
-
-        #pdb.set_trace()
+        ema_x = x
+        
+        # Regular forward pass
         x = self.mlp_in(x)
-        #pdb.set_trace()
         x = x.view(batch_dim, self.mamba_seq_size, self.hidden_size)
         x = self.mamba(x)
         x = x.view(batch_dim, self.mamba_seq_size*self.hidden_size)
-
-        x = self.mlp_out(x)
-
-        return x
+        output = self.mlp_out(x)
+        
+        # EMA forward pass (with no gradients)
+        with torch.no_grad():
+            ema_x = self.ema_critic.mlp_in(ema_x)
+            ema_x = ema_x.view(batch_dim, self.mamba_seq_size, self.hidden_size)
+            ema_x = self.ema_critic.mamba(ema_x)
+            ema_x = ema_x.view(batch_dim, self.mamba_seq_size*self.hidden_size)
+            ema_output = self.ema_critic.mlp_out(ema_x)
+        
+        return output, ema_output.detach()
 
     # def loss(self, a, b):
     #     return torch.sum(torch.square(a-b))
 
+
+    def update_ema(self):
+        for param, ema_param in zip(self.parameters(), self.ema_critic.parameters()):
+            ema_param.data = self.ema_decay * ema_param.data + (1 - self.ema_decay) * param.data
