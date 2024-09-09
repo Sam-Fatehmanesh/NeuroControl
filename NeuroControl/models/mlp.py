@@ -27,14 +27,18 @@ class MLP(nn.Module):
         residual = x
         x = self.input_norm(x)
         x = self.input_activation(x)
+       
 
         # Hidden layers with residual connections
         for layer in self.hidden_layers:
-            x = residual + layer(x)
+            x = residual + x
             residual = x
+            x = layer(x)
+
 
 
         # Output layer
+        x = residual + x
         x = self.output_layer(x)
 
         return x
