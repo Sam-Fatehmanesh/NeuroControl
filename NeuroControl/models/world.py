@@ -55,7 +55,7 @@ class NeuralWorldModel(nn.Module):
         #pdb.set_trace()
         #pdb.set_trace()
         
-        predicted_rewards = self.critic.forward(hidden_state)
+        predicted_rewards, predicted_rewards_ema = self.critic.forward(hidden_state)
         decoded_obs, obs_lats_sample, obs_lats_dist = self.autoencoder(obs, hidden_state)
         decoded_obs = decoded_obs.view(batch_dim, self.frames_per_obs, self.image_n, self.image_n)
         obs_lats_sample = obs_lats_sample.view(batch_dim, self.seq_obs_latent)
@@ -66,7 +66,7 @@ class NeuralWorldModel(nn.Module):
 
         
 
-        return decoded_obs, pred_obs_lat_sample, obs_lats_sample, hidden_state, predicted_rewards, obs_lats_dist, pred_obs_lat_dist
+        return decoded_obs, pred_obs_lat_sample, obs_lats_sample, hidden_state, predicted_rewards, predicted_rewards_ema, obs_lats_dist, pred_obs_lat_dist
 
 
     

@@ -73,7 +73,7 @@ class NeuralAgent(nn.Module):
 
             # Forward pass through the world model
             #pdb.set_trace()
-            decoded_obs, pred_next_obs_lat, obs_lats, hidden_state, predicted_rewards, obs_lats_dist, pred_obs_lat_dist = self.world_model.forward(obs, actions, hidden_state)
+            decoded_obs, pred_next_obs_lat, obs_lats, hidden_state, predicted_rewards, predicted_rewards_ema, obs_lats_dist, pred_obs_lat_dist = self.world_model.forward(obs, actions, hidden_state)
 
             decoded_obs_list.append(decoded_obs)
 
@@ -100,13 +100,13 @@ class NeuralAgent(nn.Module):
 
             # Forward pass through the world model
             #pdb.set_trace()
-            decoded_obs, pred_obs_lat, obs_lats, hidden_state, predicted_rewards, obs_lats_dist, pred_obs_lat_dist = self.world_model.forward(obs, actions, hidden_state)
+            decoded_obs, pred_obs_lat, obs_lats, hidden_state, predicted_rewards, predicted_rewards_ema, obs_lats_dist, pred_obs_lat_dist = self.world_model.forward(obs, actions, hidden_state)
             
 
             # Compute the loss
             
             representation_loss = F.mse_loss(obs, decoded_obs)# * 16
-            reward_prediction_loss = F.mse_loss(predicted_rewards, rewards) * 0.0
+            reward_prediction_loss = 0.0*(F.mse_loss(predicted_rewards, rewards) + F.mse_loss(predicted_rewards_ema, predicted_rewards))
             #kl_loss = kl_divergence_with_free_bits(pred_obs_lat.detach(), obs_lats) + kl_divergence_with_free_bits(pred_obs_lat, obs_lats.detach()) 
             kl_loss = kl_divergence_with_free_bits(obs_lats_dist.detach(), pred_obs_lat_dist) + kl_divergence_with_free_bits(obs_lats_dist, pred_obs_lat_dist.detach()) 
 
@@ -161,3 +161,7 @@ class NeuralAgent(nn.Module):
     def save_str_file_arch(self, path):
         with open(path, 'w') as f:
             f.write(str(self))
+
+
+    def update_critic_ema_model(self):
+        self.world_model.critic.update_ema()
