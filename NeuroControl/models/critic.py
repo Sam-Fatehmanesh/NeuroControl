@@ -8,7 +8,7 @@ import pdb
 import copy
 
 class NeuralControlCritic(nn.Module):
-    def __init__(self, hidden_state_size, mamba_seq_size, reward_size):
+    def __init__(self, hidden_state_size, mamba_seq_size, reward_size, reward_prediction_logits_num=41):
         super(NeuralControlCritic, self).__init__()
 
         assert hidden_state_size % mamba_seq_size == 0, "hidden_state_size must be divisible by mamba_seq_size"
@@ -29,10 +29,11 @@ class NeuralControlCritic(nn.Module):
             Mamba2(self.hidden_size),
         )
         #self.pre_mlp_flat = nn.Flatten(start_dim=0)
-        self.mlp_out = MLP(1, self.hidden_size*self.mamba_seq_size, self.hidden_size, reward_size)
+        self.mlp_out = MLP(1, self.hidden_size*self.mamba_seq_size, hidden_state_size, reward_size*reward_prediction_logits_num)
 
-        self.ema_critic = copy.deepcopy(self)
         self.ema_decay = 0.98
+        self.ema_critic = copy.deepcopy(self)
+        
 
 
     def forward(self, x):
