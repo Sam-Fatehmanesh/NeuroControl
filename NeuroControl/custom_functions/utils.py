@@ -117,3 +117,50 @@ class RMSNorm(nn.Module):
             return self.scale * x_normed + self.offset
 
         return self.scale * x_normed
+
+def symlogMSE(x, y):
+    return F.mse_loss(symlog(x), symlog(y))
+
+
+
+def twohot_symexp_loss(predicted_logits, true_values, num_bins=41):
+    # Create exponentially spaced bins
+    bins = symexp(torch.linspace(-20, 20, num_bins))
+    
+    # Compute twohot encoding for true values
+    true_symlog = symlog(true_values)
+    k = torch.sum(bins < true_symlog.unsqueeze(1), dim=1)
+    k = torch.clamp(k, 0, num_bins - 2)
+    
+    lower_bin = bins[k]
+    upper_bin = bins[k + 1]
+    
+    # Compute weights for twohot encoding
+    weight_upper = (true_symlog - lower_bin) / (upper_bin - lower_bin)
+    weight_lower = 1 - weight_upper
+    
+    # Create twohot encoding
+    twohot = torch.zeros_like(predicted_logits)
+    twohot.scatter_(1, k.unsqueeze(1), weight_lower.unsqueeze(1))
+    twohot.scatter_(1, (k + 1).unsqueeze(1), weight_upper.unsqueeze(1))
+    
+    # Add uniform mixture
+    epsilon = 0.01
+    twohot = (1 - epsilon) * twohot + epsilon / num_bins
+    
+    # Compute cross-entropy loss
+    loss = F.cross_entropy(predicted_logits, twohot, reduction='none')
+    
+    # Compute predicted values
+    softmax_probs = F.softmax(predicted_logits, dim=1)
+    
+    # Separate positive and negative bins
+    pos_mask = bins >= 0
+    neg_mask = bins < 0
+    
+    # Compute expected prediction
+    pos_pred = torch.sum(softmax_probs[:, pos_mask] * bins[pos_mask], dim=1)
+    neg_pred = torch.sum(softmax_probs[:, neg_mask] * bins[neg_mask], dim=1)
+    predicted_values = pos_pred + neg_pred
+    
+    return loss, predicted_values
