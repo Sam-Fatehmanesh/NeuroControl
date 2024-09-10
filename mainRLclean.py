@@ -31,13 +31,13 @@ image_latent_size_sqrt = 32
 agent = NeuralAgent(num_neurons=16, frames_per_step=frames_per_obs, state_latent_size=512, steps_per_ep=8, env=env, image_latent_size_sqrt=image_latent_size_sqrt)
 agent.save_str_file_arch(folder_name + "pre_trained_agent.txt")
 
-
 # agent.pre_training_loss([torch.rand((1,8,96,96)).to(device)],[torch.rand((1,5,)).to(device) > 0.5], [torch.rand((1,8,)).to(device)])
 # print("Done.")
 
 # Pre-training loop
 # Pre-training loop
-num_epochs = 1024*5#512*2*20#*12#*14
+
+num_epochs = 12500#1024*5#512*2*20#*12#*14
 batch_size = 16
 losses = []  # List to store loss values
 
@@ -53,7 +53,7 @@ for epoch in tqdm(range(num_epochs)):
     action_batch = torch.tensor(np.array(action_batch), dtype=torch.float32).to(device)
     reward_batch = torch.tensor(np.array(reward_batch), dtype=torch.float32).to(device)
     
-    loss, representation_loss, reward_prediction_loss, kl_loss = agent.pre_training_loss(obs_batch, action_batch, reward_batch, all_losses=True)
+    loss, representation_loss, reward_prediction_loss, kl_loss, mse_rewards_loss = agent.pre_training_loss(obs_batch, action_batch, reward_batch, all_losses=True)
     
     agent.optimizer_w.zero_grad()
     loss.backward()
@@ -69,6 +69,7 @@ for epoch in tqdm(range(num_epochs)):
     tqdm.write("--------------------------------------------------")
     tqdm.write(f"Epoch {epoch+1}/{num_epochs}, Loss: {loss.item()}")
     tqdm.write(f"Representation Loss: {representation_loss.item()}")
+    tqdm.write(f"MSE Reward Prediction Loss: {mse_rewards_loss.item()}")
     tqdm.write(f"Reward Prediction Loss: {reward_prediction_loss.item()}")
     tqdm.write(f"KL Loss: {kl_loss.item()}")
     tqdm.write("Obs Gen/s: " + str(env.current_obs_added_per_s))
@@ -175,7 +176,7 @@ for vid_num in range(n_vids):
         initial_latent = agent.world_model.encode_obs(initial_obs, init_h_state)
         
         # Predict future latents
-        future_steps = sequence_length
+        future_steps = sequence_length 
         predicted_latents, saved_h_states = agent.predict_image_latents(future_steps, initial_latent)
         
         # Decode the predicted latents to observations
