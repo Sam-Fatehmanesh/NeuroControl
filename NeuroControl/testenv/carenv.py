@@ -74,11 +74,11 @@ class CarEnv:
 
             while (not (terminated or truncated)):
                 action = self.env.action_space.sample()
-                if self.continuous:
-                    action[1] = 1.0
-                    action[2] = 0.0
-                else:
-                    action = 3  # Always go straight
+                # if self.continuous:
+                #     action[1] = 1.0
+                #     action[2] = 0.0
+                # else:
+                #     action = 3  # Always go straight
                 # Turn action from discrete integer into one hot
 
                 #print(action)
