@@ -206,7 +206,7 @@ class NeuralRepModel(nn.Module):
         #     STMNsampler(),
         # )
 
-    def forward(self, obs_latent, h_state, action):
+    def forward(self, h_state):
 
         batch_dim = obs_latent.shape[0]
 

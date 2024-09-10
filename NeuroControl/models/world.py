@@ -5,7 +5,7 @@ import numpy as np
 from NeuroControl.models.cnn import CNNLayer, DeCNNLayer
 from NeuroControl.models.mlp import MLP
 from NeuroControl.models.critic import NeuralControlCritic
-from NeuroControl.models.dynamics_predictor import NeuralRecurrentDynamicsModel
+from NeuroControl.models.dynamics_predictor import NeuralRecurrentDynamicsModel, NeuralRepModel, NeuralSeqModel
 from NeuroControl.models.autoencoder import NeuralAutoEncoder
 import pdb
 import csv
@@ -37,7 +37,9 @@ class NeuralWorldModel(nn.Module):
 
         self.autoencoder = NeuralAutoEncoder(num_frames_per_step, self.image_n, hidden_state_size, self.per_image_discrete_latent_size_sqrt)
 
-        self.state_predictor = NeuralRecurrentDynamicsModel(self.hidden_state_size, self.seq_obs_latent, self.action_size, self.frames_per_obs, self.per_image_discrete_latent_size_sqrt)
+        #self.state_predictor = NeuralRecurrentDynamicsModel(self.hidden_state_size, self.seq_obs_latent, self.action_size, self.frames_per_obs, self.per_image_discrete_latent_size_sqrt)
+        self.seq_model = NeuralSeqModel(self.hidden_state_size, self.seq_obs_latent, self.action_size, self.frames_per_obs, self.per_image_discrete_latent_size_sqrt)
+        self.rep_model = NeuralRepModel(self.hidden_state_size, self.seq_obs_latent, self.frames_per_obs, self.per_image_discrete_latent_size_sqrt)
 
         self.critic = NeuralControlCritic(self.hidden_state_size, self.frames_per_obs, self.frames_per_obs)
 
@@ -54,15 +56,19 @@ class NeuralWorldModel(nn.Module):
 
         #pdb.set_trace()
         #pdb.set_trace()
-        
+        pred_obs_lat_sample, pred_obs_lat_dist = self.rep_model.forward(hidden_state)
         predicted_rewards_logits, predicted_rewards_logits_ema = self.critic.forward(hidden_state)
+        
         decoded_obs, obs_lats_sample, obs_lats_dist = self.autoencoder(obs, hidden_state)
         decoded_obs = decoded_obs.view(batch_dim, self.frames_per_obs, self.image_n, self.image_n)
         obs_lats_sample = obs_lats_sample.view(batch_dim, self.seq_obs_latent)
         
         
         
-        pred_obs_lat_sample, pred_obs_lat_dist, hidden_state = self.state_predictor.forward(obs_lats_sample, hidden_state, action)
+        #, hidden_state = self.state_predictor.forward(obs_lats_sample, hidden_state, action)
+        
+        hidden_state = self.seq_model.forward(obs_lats_sample, hidden_state, action)
+
 
         
 
