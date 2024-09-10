@@ -31,7 +31,7 @@ class NeuralAutoEncoder(nn.Module):
         # self.channel_out = self.per_image_latent_size // self.frame_count
 
 
-        self.post_cnn_encoder_size_sqrt = 8
+        self.post_cnn_encoder_size_sqrt = 16
         self.post_cnn_encoder_size = self.post_cnn_encoder_size_sqrt**2#14**2
 
         #self.pre_dcnn_decoder_size = 14**2
@@ -47,7 +47,7 @@ class NeuralAutoEncoder(nn.Module):
             nn.MaxPool2d(2, stride=2),
 
             CNNLayer(64, 1, cnn_kernel_size),
-            nn.MaxPool2d(2, stride=2),
+            #nn.MaxPool2d(2, stride=2),
 
             nn.Flatten(),
         )
@@ -72,11 +72,12 @@ class NeuralAutoEncoder(nn.Module):
             
             nn.Unflatten(1, (1, self.post_cnn_encoder_size_sqrt, self.post_cnn_encoder_size_sqrt)),
 
-            DeCNNLayer(1, 64, kernel_size=3, stride=3, padding=0),
+            DeCNNLayer(1, 128, kernel_size=3, stride=3, padding=0),
 
-            DeCNNLayer(64, 16, kernel_size=2, stride=2, padding=0),
+            CNNLayer(128, 64, cnn_kernel_size),
+            #DeCNNLayer(64, 16, kernel_size=2, stride=2, padding=0),
 
-            DeCNNLayer(16, 1, kernel_size=2, stride=2, padding=0, last_act=False),
+            DeCNNLayer(64, 1, kernel_size=2, stride=2, padding=0, last_act=False),
             
             
             nn.Sigmoid(),
