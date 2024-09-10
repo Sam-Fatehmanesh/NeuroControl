@@ -27,6 +27,7 @@ class NeuralAgent(nn.Module):
 
         self.image_n = 96
         self.reward_dims = (5,)
+        self.reward_value_exp_bin_count = 41
         #self.action_dims = action_dims
 
         self.image_latent_size_sqrt = image_latent_size_sqrt
@@ -41,7 +42,7 @@ class NeuralAgent(nn.Module):
         # Loss function and optimizer
         print("Setting up optimizers.")
         linear_layer_names = [name for name, module in self.world_model.named_modules() if isinstance(module, nn.Linear)]
-        self.optimizer_w = LaProp(self.world_model.parameters(), eps=1e-20)#, lr=4e-5)
+        self.optimizer_w = LaProp(self.world_model.parameters(), eps=1e-20, lr=4e-5)
         self.optimizer_w = AGC(self.world_model.parameters(), self.optimizer_w, model=self.world_model, ignore_agc=linear_layer_names)
         self.optimizer_a = LaProp(self.actor_model.parameters())
     
@@ -73,7 +74,7 @@ class NeuralAgent(nn.Module):
 
             # Forward pass through the world model
             #pdb.set_trace()
-            decoded_obs, pred_next_obs_lat, obs_lats, hidden_state, predicted_rewards, predicted_rewards_ema, obs_lats_dist, pred_obs_lat_dist = self.world_model.forward(obs, actions, hidden_state)
+            decoded_obs, pred_next_obs_lat, obs_lats, hidden_state, predicted_rewards_logits, predicted_rewards_logits_ema, obs_lats_dist, pred_obs_lat_dist = self.world_model.forward(obs, actions, hidden_state)
 
             decoded_obs_list.append(decoded_obs)
 
@@ -100,13 +101,19 @@ class NeuralAgent(nn.Module):
 
             # Forward pass through the world model
             #pdb.set_trace()
-            decoded_obs, pred_obs_lat, obs_lats, hidden_state, predicted_rewards, predicted_rewards_ema, obs_lats_dist, pred_obs_lat_dist = self.world_model.forward(obs, actions, hidden_state)
+            decoded_obs, pred_obs_lat, obs_lats, hidden_state, predicted_rewards_logits, predicted_rewards_logits_ema, obs_lats_dist, pred_obs_lat_dist = self.world_model.forward(obs, actions, hidden_state)
             
 
             # Compute the loss
+
+            predicted_rewards_logits = predicted_rewards_logits.view(batch_size*self.seq_size, self.reward_value_exp_bin_count)
+            predicted_rewards_logits_ema = predicted_rewards_logits_ema.view(batch_size*self.seq_size, self.reward_value_exp_bin_count)
+
+            reward_prediction_loss = 0.5*(twohot_symexp_loss(predicted_rewards_logits, rewards, num_bins=self.reward_value_exp_bin_count) + twohot_symexp_loss(predicted_rewards_logits_ema, rewards, num_bins=self.reward_value_exp_bin_count))
+            
             
             representation_loss = F.binary_cross_entropy(decoded_obs, obs) #F.mse_loss(obs, decoded_obs)# * 16
-            reward_prediction_loss = 0.0*(F.mse_loss(predicted_rewards, rewards) + F.mse_loss(predicted_rewards_ema, predicted_rewards))
+            #reward_prediction_loss = (symlogMSE(predicted_rewards, rewards) + symlogMSE(predicted_rewards_ema, predicted_rewards))
             #kl_loss = kl_divergence_with_free_bits(pred_obs_lat.detach(), obs_lats) + kl_divergence_with_free_bits(pred_obs_lat, obs_lats.detach()) 
             kl_loss = kl_divergence_with_free_bits(obs_lats_dist.detach(), pred_obs_lat_dist) + kl_divergence_with_free_bits(obs_lats_dist, pred_obs_lat_dist.detach()) 
 
@@ -167,3 +174,5 @@ class NeuralAgent(nn.Module):
 
     def update_critic_ema_model(self):
         self.world_model.critic.update_ema()
+
+    
