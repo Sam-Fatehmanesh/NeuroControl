@@ -54,7 +54,7 @@ class DeCNNLayer(nn.Module):
     def forward(self, x):
         #pdb.set_trace()
         #res = x
-
+        
         x = self.deconv1(x)
         x = self.batchnorm1(x)
 
@@ -63,8 +63,7 @@ class DeCNNLayer(nn.Module):
 
         x = self.deconv2(x)
         x = self.batchnorm2(x)
-        #pdb.set_trace()
-        #x += self.match_dimensions(res)
+
         if self.last_act:
             x = self.activation2(x)
 
