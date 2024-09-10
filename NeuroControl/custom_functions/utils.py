@@ -1,6 +1,9 @@
 import torch
 from torch import nn
 import pdb
+import torch.nn.functional as F
+from torch.distributions import Distribution, Independent, OneHotCategoricalStraightThrough
+from torch.distributions.kl import kl_divergence
 
 class STsampleMultiNom(torch.autograd.Function):
     @staticmethod
@@ -39,7 +42,7 @@ def symlog(x):
 def symexp(x):
     return torch.sign(x) * (torch.exp(torch.abs(x)) - 1)
 
-def kl_divergence_with_free_bits(q_probs, p_probs, free_bits=1.0):
+def kl_divergence_with_free_bits(q_probs, p_probs, batch_size, free_bits=1.0):
     """
     Compute KL divergence between two categorical distributions with free bits.
     
@@ -51,6 +54,17 @@ def kl_divergence_with_free_bits(q_probs, p_probs, free_bits=1.0):
     Returns:
     KL(q||p) for each batch element, clipped at free_bits (B,)
     """
+    # pdb.set_trace()
+    # kl = kl_divergence(
+    #     Independent(OneHotCategoricalStraightThrough(logits=q_probs), 1),
+    #     Independent(OneHotCategoricalStraightThrough(logits=p_probs), 1),
+    # )
+    # free_nats = torch.full_like(kl, free_bits)
+    # kl =  torch.maximum(kl, free_nats)
+
+    # return kl.mean()
+
+
     batch_dim = q_probs.size(0)
 
     # Add a small epsilon to avoid log(0)
@@ -70,7 +84,9 @@ def kl_divergence_with_free_bits(q_probs, p_probs, free_bits=1.0):
 
     # perform the .max for each element
     #kld = torch.max(kld, torch.tensor(free_bits).to(kld.device))
-
+    #kld=kld.mean()
+    # kld = kld.view(batch_size, -1).sum(dim=1)
+    #kld = torch.max(kld, torch.tensor(free_bits).to(kld.device) / batch_size)
     return kld.mean()
 
 
@@ -123,20 +139,31 @@ def symlogMSE(x, y):
 
 
 
+
 def twohot_symexp_loss(predicted_logits, true_values, num_bins=41):
+    # Ensure inputs are 2D
+    if predicted_logits.dim() == 1:
+        predicted_logits = predicted_logits.unsqueeze(0)
+    if true_values.dim() == 0:
+        true_values = true_values.unsqueeze(0)
+    elif true_values.dim() == 1:
+        true_values = true_values.unsqueeze(1)
+
+    batch_size = true_values.shape[0]
+
     # Create exponentially spaced bins
-    bins = symexp(torch.linspace(-20, 20, num_bins))
+    bins = symexp(torch.linspace(-20, 20, num_bins)).to(true_values.device)
     
     # Compute twohot encoding for true values
     true_symlog = symlog(true_values)
-    k = torch.sum(bins < true_symlog.unsqueeze(1), dim=1)
+    k = torch.sum(bins < true_symlog, dim=1).long()
     k = torch.clamp(k, 0, num_bins - 2)
     
     lower_bin = bins[k]
     upper_bin = bins[k + 1]
     
     # Compute weights for twohot encoding
-    weight_upper = (true_symlog - lower_bin) / (upper_bin - lower_bin)
+    weight_upper = (true_symlog.squeeze() - lower_bin) / (upper_bin - lower_bin)
     weight_lower = 1 - weight_upper
     
     # Create twohot encoding
@@ -144,12 +171,12 @@ def twohot_symexp_loss(predicted_logits, true_values, num_bins=41):
     twohot.scatter_(1, k.unsqueeze(1), weight_lower.unsqueeze(1))
     twohot.scatter_(1, (k + 1).unsqueeze(1), weight_upper.unsqueeze(1))
     
-    # Add uniform mixture
-    epsilon = 0.01
-    twohot = (1 - epsilon) * twohot + epsilon / num_bins
+    # # Add uniform mixture
+    # epsilon = 0.01
+    # twohot = (1 - epsilon) * twohot + epsilon / num_bins
     
     # Compute cross-entropy loss
-    loss = F.cross_entropy(predicted_logits, twohot, reduction='none')
+    loss = F.cross_entropy(predicted_logits, twohot, reduction='mean')
     
     # Compute predicted values
     softmax_probs = F.softmax(predicted_logits, dim=1)

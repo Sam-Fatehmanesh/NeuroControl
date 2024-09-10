@@ -18,18 +18,20 @@ class NeuralControlCritic(nn.Module):
         self.mamba_seq_size = mamba_seq_size
         self.hidden_size = (hidden_state_size // mamba_seq_size)*8
 
+        self.reward_prediction_logits_num = reward_prediction_logits_num
+        self.reward_size = reward_size
         # # Assert that hidden_size is divisible by mamba_seq_size
         # assert hidden_size % mamba_seq_size == 0, "hidden_size must be divisible by mamba_seq_size"
 
         #self.loss = nn.MSELoss()
 
-        self.mlp_in = MLP(1, hidden_state_size, hidden_state_size*self.mamba_seq_size, self.hidden_size*self.mamba_seq_size)
+        self.mlp_in = MLP(2, hidden_state_size, hidden_state_size*self.mamba_seq_size, self.hidden_size*self.mamba_seq_size)
         self.mamba = nn.Sequential(
-            Mamba2(self.hidden_size),
+            #Mamba2(self.hidden_size),
             Mamba2(self.hidden_size),
         )
         #self.pre_mlp_flat = nn.Flatten(start_dim=0)
-        self.mlp_out = MLP(1, self.hidden_size*self.mamba_seq_size, hidden_state_size, reward_size*reward_prediction_logits_num)
+        self.mlp_out = MLP(2, self.hidden_size*self.mamba_seq_size, hidden_state_size, reward_size*reward_prediction_logits_num)
 
         self.ema_decay = 0.98
         self.ema_critic = copy.deepcopy(self)
@@ -46,7 +48,7 @@ class NeuralControlCritic(nn.Module):
         x = x.view(batch_dim, self.mamba_seq_size, self.hidden_size)
         x = self.mamba(x)
         x = x.view(batch_dim, self.mamba_seq_size*self.hidden_size)
-        output = self.mlp_out(x)
+        output = self.mlp_out(x).view(batch_dim, self.reward_size, self.reward_prediction_logits_num)
         
         # EMA forward pass (with no gradients)
         with torch.no_grad():
@@ -54,7 +56,7 @@ class NeuralControlCritic(nn.Module):
             ema_x = ema_x.view(batch_dim, self.mamba_seq_size, self.hidden_size)
             ema_x = self.ema_critic.mamba(ema_x)
             ema_x = ema_x.view(batch_dim, self.mamba_seq_size*self.hidden_size)
-            ema_output = self.ema_critic.mlp_out(ema_x)
+            ema_output = self.ema_critic.mlp_out(ema_x).view(batch_dim, self.reward_size, self.reward_prediction_logits_num)
         
         return output, ema_output.detach()
 

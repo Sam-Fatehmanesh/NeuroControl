@@ -109,13 +109,19 @@ class NeuralAgent(nn.Module):
             predicted_rewards_logits = predicted_rewards_logits.view(batch_size*self.seq_size, self.reward_value_exp_bin_count)
             predicted_rewards_logits_ema = predicted_rewards_logits_ema.view(batch_size*self.seq_size, self.reward_value_exp_bin_count)
 
-            reward_prediction_loss = 0.5*(twohot_symexp_loss(predicted_rewards_logits, rewards, num_bins=self.reward_value_exp_bin_count) + twohot_symexp_loss(predicted_rewards_logits_ema, rewards, num_bins=self.reward_value_exp_bin_count))
+            rewards = torch.reshape(rewards, shape=(batch_size*self.seq_size, 1))
+            #pdb.set_trace()
+            twohotloss, predicted_rewards = twohot_symexp_loss(predicted_rewards_logits, rewards, num_bins=self.reward_value_exp_bin_count)
+            reward_predictor_ema_reg_loss = F.cross_entropy(predicted_rewards_logits, torch.softmax(predicted_rewards_logits_ema, dim=1), reduction="mean")
+            #pdb.set_trace()
+            reward_prediction_loss = (twohotloss + reward_predictor_ema_reg_loss)
             
+            mse_rewards_loss = F.mse_loss(predicted_rewards, rewards)
             
             representation_loss = F.binary_cross_entropy(decoded_obs, obs) #F.mse_loss(obs, decoded_obs)# * 16
             #reward_prediction_loss = (symlogMSE(predicted_rewards, rewards) + symlogMSE(predicted_rewards_ema, predicted_rewards))
             #kl_loss = kl_divergence_with_free_bits(pred_obs_lat.detach(), obs_lats) + kl_divergence_with_free_bits(pred_obs_lat, obs_lats.detach()) 
-            kl_loss = kl_divergence_with_free_bits(obs_lats_dist.detach(), pred_obs_lat_dist) + kl_divergence_with_free_bits(obs_lats_dist, pred_obs_lat_dist.detach()) 
+            kl_loss = kl_divergence_with_free_bits(obs_lats_dist.detach(), pred_obs_lat_dist, batch_size) + kl_divergence_with_free_bits(obs_lats_dist, pred_obs_lat_dist.detach(), batch_size) 
 
             if i == 0:
                 reward_prediction_loss *= 0
@@ -123,7 +129,7 @@ class NeuralAgent(nn.Module):
             total_loss += representation_loss + reward_prediction_loss + (kl_loss)
         
         if all_losses:
-            return total_loss, representation_loss, reward_prediction_loss, kl_loss
+            return total_loss, representation_loss, reward_prediction_loss, kl_loss, mse_rewards_loss
         return total_loss
 
 
