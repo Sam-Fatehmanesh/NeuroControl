@@ -109,7 +109,7 @@ class NeuralRecurrentDynamicsModel(nn.Module):
 
 class NeuralSeqModel(nn.Module):
     def __init__(self, hidden_state_size, obs_latent_size, action_size, seq_size, per_image_discrete_latent_size_sqrt):
-        super(NeuralRecurrentDynamicsModel, self).__init__()
+        super(NeuralSeqModel, self).__init__()
 
         # Ensure latent_size is divisible by seq_size
         #assert hidden_state_size % seq_size == 0, "latent_size must be divisible by seq_size"
@@ -165,7 +165,7 @@ class NeuralSeqModel(nn.Module):
 
 class NeuralRepModel(nn.Module):
     def __init__(self, hidden_state_size, obs_latent_size, seq_size, per_image_discrete_latent_size_sqrt):
-        super(NeuralRecurrentDynamicsModel, self).__init__()
+        super(NeuralRepModel, self).__init__()
 
         # Ensure latent_size is divisible by seq_size
         #assert hidden_state_size % seq_size == 0, "latent_size must be divisible by seq_size"
@@ -180,7 +180,7 @@ class NeuralRepModel(nn.Module):
         self.pre_mlp_size = hidden_state_size
         #self.hidden_size = 1024
 
-        self.pre_post_mamba_size = ((2 ** ((int(self.pre_mlp_size) - 1).bit_length() - 1)))
+        self.pre_post_mamba_size = ((2 ** ((int(self.pre_mlp_size) - 1).bit_length() - 1))) * 8
 
         assert self.pre_post_mamba_size % self.seq_size == 0, "per_item_mamba_size must be divisible by 2"
         self.hidden_mamba_size = (self.pre_post_mamba_size // self.seq_size)
@@ -208,7 +208,7 @@ class NeuralRepModel(nn.Module):
 
     def forward(self, h_state):
 
-        batch_dim = obs_latent.shape[0]
+        batch_dim = h_state.shape[0]
 
         x = self.pre_z_pred_mamba_mlp(h_state)
 
