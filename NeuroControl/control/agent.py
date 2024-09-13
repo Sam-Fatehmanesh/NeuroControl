@@ -109,7 +109,7 @@ class NeuralAgent(nn.Module):
             predicted_rewards_logits = predicted_rewards_logits.view(batch_size*self.seq_size, self.reward_value_exp_bin_count)
             predicted_rewards_logits_ema = predicted_rewards_logits_ema.view(batch_size*self.seq_size, self.reward_value_exp_bin_count)
 
-            rewards = torch.reshape(rewards, shape=(batch_size*self.seq_size, 1))
+            rewards = torch.reshape(rewards, shape=(batch_size*self.seq_size,))
             #pdb.set_trace()
             twohotloss, predicted_rewards = twohot_symexp_loss(predicted_rewards_logits, rewards, num_bins=self.reward_value_exp_bin_count)
             reward_predictor_ema_reg_loss = F.cross_entropy(predicted_rewards_logits, torch.softmax(predicted_rewards_logits_ema, dim=1), reduction="mean")
@@ -126,7 +126,7 @@ class NeuralAgent(nn.Module):
             if i == 0:
                 reward_prediction_loss *= 0
                 
-            total_loss += representation_loss + reward_prediction_loss + (kl_loss)
+            total_loss += torch.flatten(representation_loss) + torch.flatten(reward_prediction_loss) + torch.flatten(kl_loss)
         
         if all_losses:
             return total_loss, representation_loss, reward_prediction_loss, kl_loss, mse_rewards_loss
@@ -134,8 +134,9 @@ class NeuralAgent(nn.Module):
 
 
 
-    def predict_image_latents(self, steps, lat_0):
-
+    def predict_image_latents(self, steps, lat_0, actions=None):
+        
+        #pdb.set_trace()
         batch_dim = lat_0.shape[0]
 
         pred_image_latents = torch.empty((batch_dim, 0, self.seq_obs_latent))
@@ -146,10 +147,20 @@ class NeuralAgent(nn.Module):
 
         h_state = torch.zeros(batch_dim, self.state_latent_size)
 
-        for _ in range(steps):
-            action = torch.rand(batch_dim, self.seq_size, *self.action_dims)
+        for i in range(steps):
+            #torch.rand(batch_dim, self.seq_size, *self.action_dims)
+            if actions == None:
+                action = torch.rand(batch_dim, self.seq_size, *self.action_dims)
+            else:
+                action = actions[:, self.frames_per_step*i:self.frames_per_step*(i+1)]
             #pdb.set_trace()
-            latent, latent_distribution, h_state = self.world_model.state_predictor.forward(latent, h_state, action)
+            # print("############")
+            # print(latent.size())
+            # print(h_state.size())
+            # print(action.size())
+            h_state = self.world_model.seq_model.forward(latent, h_state, action)
+            #print(h_state.size())
+            latent, latent_distribution = self.world_model.rep_model.forward(h_state)
             saved_h_states = torch.cat((saved_h_states, h_state.unsqueeze(1)), dim=1)
             pred_image_latents = torch.cat((pred_image_latents, latent.unsqueeze(1)), dim=1)
 
