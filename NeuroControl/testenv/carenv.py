@@ -7,6 +7,7 @@ import queue
 import cv2
 import gymnasium as gym
 import time
+import pdb
 
 class CarEnv:
     def __init__(self, render_mode=None, device='cpu', frames_per_obs=10, seq_length=32, continuous=False):
@@ -19,7 +20,7 @@ class CarEnv:
             self.env = gym.make("CarRacing-v2", render_mode=render_mode, continuous=False)
 
         self.frames_per_obs = frames_per_obs
-        self.episode_length = self.frames_per_obs *  seq_length
+        self.batch_length = self.frames_per_obs *  seq_length
         
         print("Setting random seeds.")
         seed = 42
@@ -79,7 +80,7 @@ class CarEnv:
                 #     action[2] = 0.0
                 # else:
                 #     action = 3  # Always go straight
-                # Turn action from discrete integer into one hot
+                # # Turn action from discrete integer into one hot
 
                 #print(action)
 
@@ -94,22 +95,22 @@ class CarEnv:
                 action_sequence.append(action)
                 reward_sequence.append(reward)
 
-                if len(obs_sequence) == self.episode_length:
+                if len(obs_sequence) == self.batch_length:
                     episode_obs.append(self.preprocess_observation(obs_sequence))
                     episode_actions.append(action_sequence)
                     episode_rewards.append(reward_sequence)
                     obs_sequence = []
                     action_sequence = []
                     reward_sequence = []
-                    break
+                    
 
             # Add any remaining partial sequence
             if obs_sequence:
-                while len(obs_sequence) < self.episode_length:
+                while len(obs_sequence) < self.batch_length:
                     obs_sequence.append(next_obs)
-                    action_sequence.append(action)
+                    action_sequence.append(np.zeros(self.action_size))
                     reward_sequence.append(0)  # Pad with zero rewards
-                episode_obs.append(self.preprocess_observation(obs_sequence))
+                episode_obs.append(255 * np.random.rand(*(np.array(self.preprocess_observation(obs_sequence)).shape)))
                 episode_actions.append(action_sequence)
                 episode_rewards.append(reward_sequence)
 
@@ -166,6 +167,7 @@ class CarEnv:
         self.resume_simulation()  # Resume the simulator
 
         # Normalize obs_batch to be between 0-1
+        #pdb.set_trace()
         obs_batch = np.array(obs_batch) / 255.0
 
         return obs_batch, action_batch, reward_batch
@@ -176,17 +178,18 @@ class CarEnv:
         if self.data_buffer.qsize() < num_episodes:
             self.resume_simulation()  # Resume if not enough data
             return None
-
-        sampled_episodes = random.sample(list(self.data_buffer.queue), num_episodes)
         
+        sampled_episodes = random.sample(list(self.data_buffer.queue), num_episodes)
+        #pdb.set_trace()
         obs_batch, action_batch, reward_batch = zip(*sampled_episodes)
 
         self.resume_simulation()  # Resume the simulator
 
         # Normalize obs_batch to be between 0-1
-        obs_batch = [np.array(episode) / 255.0 for episode in obs_batch]
+        #obs_batch = [np.array(episode) / 255.0 for episode in obs_batch]
+        obs_batch = np.array(obs_batch) / 255.0
 
-        return obs_batch, action_batch, reward_batch
+        return obs_batch, np.array(action_batch), np.array(reward_batch)
 
     def gen_vid_from_obs(self, obs, filename="simulation.mp4", fps=10.0, frame_size=(96, 96)):
         os.makedirs(os.path.dirname(filename), exist_ok=True)
