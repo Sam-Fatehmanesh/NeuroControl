@@ -5,7 +5,7 @@ import numpy as np
 from NeuroControl.models.cnn import CNNLayer, DeCNNLayer
 from NeuroControl.models.mlp import MLP
 from NeuroControl.models.critic import NeuralControlCritic
-from NeuroControl.models.dynamics_predictor import NeuralRecurrentDynamicsModel, NeuralRepModel, NeuralSeqModel
+from NeuroControl.models.dynamics_predictor import  NeuralRepModel, NeuralSeqModel
 from NeuroControl.models.autoencoder import NeuralAutoEncoder
 import pdb
 import csv
