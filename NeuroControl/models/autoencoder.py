@@ -30,54 +30,51 @@ class NeuralAutoEncoder(nn.Module):
         # assert self.per_image_latent_size % self.frame_count == 0, "self.per_image_latent_size must be divisible by self.frame_count"
         # self.channel_out = self.per_image_latent_size // self.frame_count
 
-
-        self.post_cnn_encoder_size_sqrt = 16
-        self.post_cnn_encoder_size = self.post_cnn_encoder_size_sqrt**2#14**2
+        self.latent_channels_size = 32
+        self.post_cnn_encoder_size_sqrt = 8
+        self.post_cnn_encoder_size = self.latent_channels_size  * (self.post_cnn_encoder_size_sqrt**2)#14**2
 
         #self.pre_dcnn_decoder_size = 14**2
 
+        self.scale_0 = 4
+        self.scale_1 = 3
+        
 
         # When with culture use padding = 4 for first cnn layer for 288x288
         # Encoder
         self.cnn_encoder = nn.Sequential(
-            CNNLayer(1, 16, cnn_kernel_size),
-            nn.MaxPool2d(3, stride=3),
+            CNNLayer(1, 64, cnn_kernel_size),
+            nn.MaxPool2d(self.scale_0, stride=self.scale_0),
 
-            CNNLayer(16, 64, cnn_kernel_size),
-            nn.MaxPool2d(2, stride=2),
+            CNNLayer(64, self.latent_channels_size, cnn_kernel_size),
+            nn.MaxPool2d(self.scale_1, stride=self.scale_1),
 
-            CNNLayer(64, 1, cnn_kernel_size),
+            #CNNLayer(64, 1, cnn_kernel_size),
             #nn.MaxPool2d(2, stride=2),
 
             nn.Flatten(),
         )
 
-        self.mlp_encoder = MLP(3, self.post_cnn_encoder_size + hidden_state_size, self.per_image_latent_size, self.per_image_latent_size)
+        #pdb.set_trace()
+        self.mlp_encoder = MLP(3, self.post_cnn_encoder_size + hidden_state_size, int(2*self.per_image_latent_size), self.per_image_latent_size)
+        
 
         self.softmax_act = nn.Softmax(dim=1)
         self.sampler = STMNsampler()
 
-        # self.discretizer = nn.Sequential(
-        #     ,
-        # )
 
-
-        
 
 
         # Decoder
         self.decoder = nn.Sequential(
             
-            MLP(3, self.per_image_latent_size + hidden_state_size, self.per_image_latent_size, self.post_cnn_encoder_size),
+            MLP(3, self.per_image_latent_size + hidden_state_size, int(2*self.per_image_latent_size), self.post_cnn_encoder_size),
             
-            nn.Unflatten(1, (1, self.post_cnn_encoder_size_sqrt, self.post_cnn_encoder_size_sqrt)),
+            nn.Unflatten(1, (self.latent_channels_size, self.post_cnn_encoder_size_sqrt, self.post_cnn_encoder_size_sqrt)),
 
-            DeCNNLayer(1, 128, kernel_size=3, stride=3, padding=0),
+            DeCNNLayer(self.latent_channels_size, 64, kernel_size=self.scale_1, stride=self.scale_1, padding=0),
 
-            CNNLayer(128, 64, cnn_kernel_size),
-            #DeCNNLayer(64, 16, kernel_size=2, stride=2, padding=0),
-
-            DeCNNLayer(64, 1, kernel_size=2, stride=2, padding=0, last_act=False),
+            DeCNNLayer(64, 1, kernel_size=self.scale_0, stride=self.scale_0, padding=0, last_act=False),
             
             
             nn.Sigmoid(),
@@ -104,28 +101,28 @@ class NeuralAutoEncoder(nn.Module):
 
 
         # Adding noise to make non deterministic
-        x = 0.99 * x + 0.01 * (torch.rand(x.shape).to(x.device) - 0.5)
+        #x = 0.99 * x + 0.01 * (torch.rand(x.shape).to(x.device) - 0.5)
 
 
         x = x.view(batch_dim * self.frame_count * self.per_image_discrete_latent_side_size, self.per_image_discrete_latent_side_size)
         #pdb.set_trace()
+
         distributions = self.softmax_act(x)
+        distributions = 0.99*distributions + 0.01*torch.ones_like(distributions)/self.per_image_discrete_latent_side_size
 
         sample = self.sampler(distributions)
 
         sample = sample.view(batch_dim, self.frame_count, self.per_image_latent_size)
-        distributions = distributions.view(batch_dim, self.frame_count, self.per_image_latent_size)
+        distributions = distributions.view(batch_dim, self.frame_count, self.per_image_latent_size)        
 
-        
-        
         return sample, distributions
 
     def decode(self, z, h_t):
         batch_dim = z.shape[0]
-        #pdb.set_trace()
+
         z = z.view(batch_dim*self.frame_count, self.per_image_latent_size)
         h_t = torch.tile(h_t, (self.frame_count, 1))
-        #pdb.set_trace()
+
         z = torch.cat( (z, h_t), dim=1)
 
         z = self.decoder(z)
