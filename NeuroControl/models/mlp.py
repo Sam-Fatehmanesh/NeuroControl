@@ -24,21 +24,20 @@ class MLP(nn.Module):
     def forward(self, x):
         # Input layer
         x = self.input_layer(x)
-        residual = x
+        #residual = x
         x = self.input_norm(x)
         x = self.input_activation(x)
-       
+        residual = x
+        
 
         # Hidden layers with residual connections
         for layer in self.hidden_layers:
-            x = residual + x
-            residual = x
             x = layer(x)
+            x = residual + x
 
 
 
         # Output layer
-        x = residual + x
         x = self.output_layer(x)
 
         return x
