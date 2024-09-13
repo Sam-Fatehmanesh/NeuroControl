@@ -18,7 +18,7 @@ os.makedirs(folder_name, exist_ok=True)
 device = torch.device("cuda:0" if torch.cuda.is_available() else "cpu")
 
 # Environment setup
-sequence_length = 8  # 
+sequence_length = 8  
 frames_per_obs = 8 # Number of frames to stack for input to the agent
 env = CarEnv(render_mode=None, device=device, frames_per_obs=frames_per_obs, seq_length=sequence_length)
 env.start_data_generation()
@@ -160,24 +160,36 @@ agent.save_checkpoint(folder_name + "pre_trained_agent.pth")
 
 
 print("Generating demo videos...")
-n_vids = 1  # Number of videos to generate
+n_vids = 3  # Number of videos to generate
 
 for vid_num in range(n_vids):
     with torch.no_grad():
         # Get an initial observation
-        obs, _, _ = env.sample_buffer(1)
+        obs_ori, _, _ = env.sample_buffer(1)
+        obs, actions, _ = env.sample_episodes(1)
         obs = torch.tensor(obs, dtype=torch.float32).to(device)
-        initial_obs = obs[:, 0:frames_per_obs]
+        obs = torch.squeeze(obs, dim=0)
+        #obs = obs.view(obs.size(0)*obs.size(1), obs.size(2), obs.size(3))
+        #pdb.set_trace()
+
+        actions = torch.tensor(actions, dtype=torch.float32).to(device)
+        #pdb.set_trace()
+        #actions = torch.squeeze(actions, dim=0)
+        actions = actions.view(1, actions.size(1)*actions.size(2), actions.size(3))
+        initial_obs = torch.unsqueeze(obs[0, 0:frames_per_obs], dim=0)
+        #pdb.set_trace()
 
         init_h_state = torch.zeros(1, agent.state_latent_size).to(device)
         
         # Encode the initial observation
-
+        #pdb.set_trace()
         initial_latent = agent.world_model.encode_obs(initial_obs, init_h_state)
         
         # Predict future latents
-        future_steps = sequence_length 
-        predicted_latents, saved_h_states = agent.predict_image_latents(future_steps, initial_latent)
+        future_steps = 16*8
+        #pdb.set_trace()
+        #pdb.set_trace()
+        predicted_latents, saved_h_states = agent.predict_image_latents(future_steps, initial_latent, actions=actions)
         
         # Decode the predicted latents to observations
         predicted_latents = predicted_latents.view(future_steps, frames_per_obs, (image_latent_size_sqrt**2))
