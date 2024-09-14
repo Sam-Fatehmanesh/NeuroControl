@@ -85,6 +85,9 @@ class NeuralAgent(nn.Module):
 
     def pre_training_loss(self, obs_list, actions_list, rewards_list, all_losses = False):
         total_loss = torch.zeros(1)
+        reward_predictor_loss = torch.zeros(1)
+        decoder_representation_loss = torch.zeros(1)
+        dynamics_encoder_kl_loss = torch.zeros(1)
 
         batch_length = obs_list.shape[1] // self.frames_per_step
         batch_size = obs_list.shape[0]
@@ -115,21 +118,26 @@ class NeuralAgent(nn.Module):
             reward_predictor_ema_reg_loss = F.cross_entropy(predicted_rewards_logits, torch.softmax(predicted_rewards_logits_ema, dim=1), reduction="mean")
             #pdb.set_trace()
             reward_prediction_loss = (twohotloss + reward_predictor_ema_reg_loss)
+            if i == 0:
+                reward_prediction_loss *= 0
+
+            reward_predictor_loss += reward_prediction_loss
             
             mse_rewards_loss = F.mse_loss(predicted_rewards, rewards)
             
             representation_loss = F.binary_cross_entropy(decoded_obs, obs) #F.mse_loss(obs, decoded_obs)# * 16
+            decoder_representation_loss += representation_loss
             #reward_prediction_loss = (symlogMSE(predicted_rewards, rewards) + symlogMSE(predicted_rewards_ema, predicted_rewards))
             #kl_loss = kl_divergence_with_free_bits(pred_obs_lat.detach(), obs_lats) + kl_divergence_with_free_bits(pred_obs_lat, obs_lats.detach()) 
-            kl_loss = kl_divergence_with_free_bits(obs_lats_dist.detach(), pred_obs_lat_dist, batch_size) + kl_divergence_with_free_bits(obs_lats_dist, pred_obs_lat_dist.detach(), batch_size) 
+            kl_loss = kl_divergence_with_free_bits(obs_lats_dist.detach(), pred_obs_lat_dist, batch_size) + 0.1 * kl_divergence_with_free_bits(obs_lats_dist, pred_obs_lat_dist.detach(), batch_size) 
+            dynamics_encoder_kl_loss += kl_loss
 
-            if i == 0:
-                reward_prediction_loss *= 0
+            
                 
-            total_loss += torch.flatten(representation_loss) + torch.flatten(reward_prediction_loss) + torch.flatten(kl_loss)
-        
+            #total_loss += torch.flatten(representation_loss) + torch.flatten(reward_prediction_loss) + torch.flatten(kl_loss)
+        total_loss = reward_predictor_loss + decoder_representation_loss + dynamics_encoder_kl_loss
         if all_losses:
-            return total_loss, representation_loss, reward_prediction_loss, kl_loss, mse_rewards_loss
+            return total_loss, decoder_representation_loss, reward_predictor_loss, dynamics_encoder_kl_loss, mse_rewards_loss
         return total_loss
 
 
