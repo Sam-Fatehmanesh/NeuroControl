@@ -38,7 +38,7 @@ class NeuralControlCritic(nn.Module):
         
 
 
-    def forward(self, x):
+    def forward(self, x, ema_forward=True):
         batch_dim = x.shape[0]
 
         ema_x = x
@@ -51,14 +51,18 @@ class NeuralControlCritic(nn.Module):
         output = self.mlp_out(x).view(batch_dim, self.reward_size, self.reward_prediction_logits_num)
         
         # EMA forward pass (with no gradients)
-        with torch.no_grad():
-            ema_x = self.ema_critic.mlp_in(ema_x)
-            ema_x = ema_x.view(batch_dim, self.mamba_seq_size, self.hidden_size)
-            ema_x = self.ema_critic.mamba(ema_x)
-            ema_x = ema_x.view(batch_dim, self.mamba_seq_size*self.hidden_size)
-            ema_output = self.ema_critic.mlp_out(ema_x).view(batch_dim, self.reward_size, self.reward_prediction_logits_num)
-        
-        return output, ema_output.detach()
+        if ema_forward:
+            with torch.no_grad():
+                ema_x = self.ema_critic.mlp_in(ema_x)
+                ema_x = ema_x.view(batch_dim, self.mamba_seq_size, self.hidden_size)
+                ema_x = self.ema_critic.mamba(ema_x)
+                ema_x = ema_x.view(batch_dim, self.mamba_seq_size*self.hidden_size)
+                ema_output = self.ema_critic.mlp_out(ema_x).view(batch_dim, self.reward_size, self.reward_prediction_logits_num)
+            
+            return output, ema_output.detach()
+        else:
+            return output
+
 
     # def loss(self, a, b):
     #     return torch.sum(torch.square(a-b))
