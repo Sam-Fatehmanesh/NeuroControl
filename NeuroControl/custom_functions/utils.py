@@ -191,3 +191,27 @@ def twohot_symexp_loss(predicted_logits, true_values, num_bins=41):
     predicted_values = pos_pred + neg_pred
     
     return loss, predicted_values
+
+
+def logits_to_reward(predicted_logits, num_bins=41):
+    # Ensure input is 2D
+    if predicted_logits.dim() == 1:
+        predicted_logits = predicted_logits.unsqueeze(0)
+
+    # Create exponentially spaced bins
+    bins = symexp(torch.linspace(-20, 20, num_bins)).to(predicted_logits.device)
+    
+    # Compute softmax probabilities
+    softmax_probs = F.softmax(predicted_logits, dim=1)
+    
+    # Separate positive and negative bins
+    pos_mask = bins >= 0
+    neg_mask = bins < 0
+    
+    # Compute expected prediction
+    pos_pred = torch.sum(softmax_probs[:, pos_mask] * bins[pos_mask], dim=1)
+    neg_pred = torch.sum(softmax_probs[:, neg_mask] * bins[neg_mask], dim=1)
+    predicted_rewards = pos_pred + neg_pred
+    
+    return predicted_rewards
+
