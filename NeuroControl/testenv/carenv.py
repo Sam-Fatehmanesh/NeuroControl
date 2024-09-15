@@ -143,6 +143,8 @@ class CarEnv:
 
     def sample_buffer(self, batch_size):
         self.pause_simulation()  # Pause the simulator
+        list_data_buffer = list(self.data_buffer.queue)
+        self.resume_simulation()
 
         if self.data_buffer.qsize() < 1:
             self.resume_simulation()  # Resume if not enough data
@@ -152,7 +154,7 @@ class CarEnv:
         obs_batch, action_batch, reward_batch = [], [], []
 
         for _ in range(batch_size):
-            episode = random.choice(list(self.data_buffer.queue))
+            episode = random.choice(list_data_buffer)
             episode_obs, episode_actions, episode_rewards = episode
 
             if len(episode_obs) < 1:
@@ -164,7 +166,7 @@ class CarEnv:
             action_batch.append(episode_actions[idx])
             reward_batch.append(episode_rewards[idx])
 
-        self.resume_simulation()  # Resume the simulator
+        #self.resume_simulation()  # Resume the simulator
 
         # Normalize obs_batch to be between 0-1
         #pdb.set_trace()
@@ -180,10 +182,12 @@ class CarEnv:
             return None
         
         sampled_episodes = random.sample(list(self.data_buffer.queue), num_episodes)
+
+        self.resume_simulation()
         #pdb.set_trace()
         obs_batch, action_batch, reward_batch = zip(*sampled_episodes)
 
-        self.resume_simulation()  # Resume the simulator
+          # Resume the simulator
 
         # Normalize obs_batch to be between 0-1
         #obs_batch = [np.array(episode) / 255.0 for episode in obs_batch]
