@@ -12,6 +12,7 @@ import csv
 from soft_moe_pytorch import SoftMoE, DynamicSlotsSoftMoE
 from mamba_ssm import Mamba2 as Mamba
 from NeuroControl.custom_functions.utils import STMNsampler, symlog, symexp
+from NeuroControl.custom_functions.utils import logits_to_reward
 
 
 class NeuralWorldModel(nn.Module):
@@ -22,7 +23,7 @@ class NeuralWorldModel(nn.Module):
 
         self.image_n = image_n
         self.action_dims = action_dims
-        self.action_size = np.prod(action_dims) * num_frames_per_step
+        self.action_size = np.prod(action_dims)
 
         self.frames_per_obs = num_frames_per_step
 
@@ -41,7 +42,7 @@ class NeuralWorldModel(nn.Module):
         self.seq_model = NeuralSeqModel(self.hidden_state_size, self.seq_obs_latent, self.action_size, self.frames_per_obs, self.per_image_discrete_latent_size_sqrt)
         self.rep_model = NeuralRepModel(self.hidden_state_size, self.seq_obs_latent, self.frames_per_obs, self.per_image_discrete_latent_size_sqrt)
 
-        self.critic = NeuralControlCritic(self.hidden_state_size, self.frames_per_obs, self.frames_per_obs)
+        self.reward_model = NeuralControlCritic(self.hidden_state_size, self.frames_per_obs, self.frames_per_obs)
 
 
 
@@ -54,22 +55,30 @@ class NeuralWorldModel(nn.Module):
     def forward(self, obs, action, hidden_state):
         batch_dim = obs.shape[0]
 
-        #pdb.set_trace()
-        #pdb.set_trace()
+
         pred_obs_lat_sample, pred_obs_lat_dist = self.rep_model.forward(hidden_state)
-        predicted_rewards_logits, predicted_rewards_logits_ema = self.critic.forward(hidden_state)
+        predicted_rewards_logits, _ = self.reward_model.forward(hidden_state)
         
-        decoded_obs, obs_lats_sample, obs_lats_dist = self.autoencoder(obs, hidden_state)
-        decoded_obs = decoded_obs.view(batch_dim, self.frames_per_obs, self.image_n, self.image_n)
         obs_lats_sample = obs_lats_sample.view(batch_dim, self.seq_obs_latent)
         
         
-        
-        #, hidden_state = self.state_predictor.forward(obs_lats_sample, hidden_state, action)
-        
+                
         hidden_state = self.seq_model.forward(obs_lats_sample, hidden_state, action)
 
 
         
 
         return decoded_obs, pred_obs_lat_sample, obs_lats_sample, hidden_state, predicted_rewards_logits, predicted_rewards_logits_ema, obs_lats_dist, pred_obs_lat_dist    
+
+    def imagine_forward(self, hidden_state, obs_latent, action):
+        batch_size = hidden_state.shape[0]
+
+        predicted_reward = logits_to_reward(self.reward_model.forward(hidden_state))
+
+        pred_obs_lat_sample, _ = self.rep_model.forward(hidden_state)
+
+        hidden_state = self.seq_model.forward(obs_latent, hidden_state, action)
+
+        return hidden_state, pred_obs_lat_sample, predicted_reward
+
+    
