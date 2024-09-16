@@ -44,7 +44,7 @@ class NeuralSeqModel(nn.Module):
 
 
     def forward(self, obs_latent, h_state, action):
-
+        #pdb.set_trace()
         batch_dim = obs_latent.shape[0]
         
         action = torch.flatten(action, start_dim=1)
