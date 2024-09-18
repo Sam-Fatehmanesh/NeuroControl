@@ -4,6 +4,8 @@ import pdb
 import torch.nn.functional as F
 from torch.distributions import Distribution, Independent, OneHotCategoricalStraightThrough
 from torch.distributions.kl import kl_divergence
+import matplotlib.pyplot as plt
+
 
 class STsampleMultiNom(torch.autograd.Function):
     @staticmethod
@@ -68,7 +70,7 @@ def kl_divergence_with_free_bits(q_probs, p_probs, batch_size, free_bits=1.0):
     batch_dim = q_probs.size(0)
 
     # Add a small epsilon to avoid log(0)
-    epsilon = 1e-15
+    epsilon = 0#1e-15
     
     # Compute KL divergence
     kld = q_probs * (torch.log(q_probs + epsilon) - torch.log(p_probs + epsilon))
@@ -215,3 +217,13 @@ def logits_to_reward(predicted_logits, num_bins=41):
     
     return predicted_rewards
 
+
+def plot_and_save(losses, title, ylabel, filename):
+    plt.figure(figsize=(10, 6))
+    plt.plot(range(1, len(losses) + 1), losses)
+    plt.title(f'{title} over Epochs')
+    plt.xlabel('Epoch')
+    plt.ylabel(ylabel)
+    plt.grid(True)
+    plt.savefig(filename)
+    plt.close()
