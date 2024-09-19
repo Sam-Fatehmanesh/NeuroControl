@@ -10,10 +10,11 @@ import time
 import pdb
 
 class CarEnv:
-    def __init__(self, render_mode=None, device='cpu', frames_per_obs=10, seq_length=32, continuous=False):
+    def __init__(self, agent, render_mode=None, device='cpu', frames_per_obs=10, seq_length=32, continuous=False):
         self.device = device
         self.env = None
         self.continuous = continuous
+        self.agent = agent
         if continuous:
             self.env = gym.make("CarRacing-v2", render_mode=render_mode, continuous=True)
         else:
@@ -45,6 +46,7 @@ class CarEnv:
         self.simulation_thread = None
 
         self.current_obs_added_per_s = 1
+        self.all_rewards = []
 
     def preprocess_observation(self, obs_sequence):
         processed_sequence = []
@@ -52,6 +54,8 @@ class CarEnv:
             processed_obs = cv2.cvtColor(obs, cv2.COLOR_RGB2GRAY)
             processed_sequence.append(processed_obs)
         return np.array(processed_sequence)
+
+
 
         
     def simulation_worker(self):
@@ -73,8 +77,44 @@ class CarEnv:
             action_sequence = []
             reward_sequence = []
 
+            hidden_state = torch.zeros(1, self.agent.h_state_latent_size).to(self.device)
+            obs_lat = torch.zeros(1, self.agent.seq_obs_latent).to(self.device)
+
+            steps_in_ep_sofar = 0
+            action_seq = None
+            action_seq_index = 0
+
             while (not (terminated or truncated)):
-                action = self.env.action_space.sample()
+                if steps_in_ep_sofar < self.frames_per_obs * 8:
+                    action = self.env.action_space.sample()
+                else:
+                    with torch.no_grad():
+                        if action_seq_index > self.frames_per_obs-1 or action_seq_index == 0:
+                            # Get the last observation from the episode
+                            obs = torch.tensor(np.array(episode_obs[-1])/255.0, dtype=torch.float32).to(self.device)[-self.frames_per_obs:].unsqueeze(0)
+                            actions = torch.tensor(np.array(episode_actions[-1]), dtype=torch.float32).to(self.device)[-self.frames_per_obs:].unsqueeze(0)
+
+                            #pdb.set_trace()
+
+                            hidden_state, obs_lat = self.agent.state_and_obslat_from_obs(obs, actions, hidden_state)
+
+
+
+                            action_seq = self.agent.act_sample_from_hidden_state_and_obs(hidden_state, obs_lat)
+
+                            action_seq_index = 0
+                            action = torch.argmax(action_seq[0, action_seq_index]).item()    
+                        else:
+                            #pdb.set_trace()
+                            action = torch.argmax(action_seq[0, action_seq_index]).item()
+                        
+                    action_seq_index += 1
+
+
+                # action = self.env.action_space.sample()
+
+
+                
                 # if self.continuous:
                 #     action[1] = 1.0
                 #     action[2] = 0.0
@@ -95,6 +135,8 @@ class CarEnv:
                 action_sequence.append(action)
                 reward_sequence.append(reward)
 
+                self.all_rewards.append(reward)
+
                 if len(obs_sequence) == self.batch_length:
                     episode_obs.append(self.preprocess_observation(obs_sequence))
                     episode_actions.append(action_sequence)
@@ -102,6 +144,8 @@ class CarEnv:
                     obs_sequence = []
                     action_sequence = []
                     reward_sequence = []
+                
+                steps_in_ep_sofar += 1
                     
 
             # Add any remaining partial sequence
@@ -120,7 +164,8 @@ class CarEnv:
 
             end_time = time.time()
             time_taken = end_time - start_time
-            self.current_obs_added_per_s = len(episode_obs)/ time_taken  # Episodes per second
+            self.current_obs_added_per_s = 8*len(episode_obs)/ time_taken  # Episodes per second
+            
 
 
     def start_data_generation(self):
@@ -190,10 +235,39 @@ class CarEnv:
           # Resume the simulator
 
         # Normalize obs_batch to be between 0-1
-        #obs_batch = [np.array(episode) / 255.0 for episode in obs_batch]
+
         obs_batch = np.array(obs_batch) / 255.0
 
         return obs_batch, np.array(action_batch), np.array(reward_batch)
+
+    def get_episode_with_index(self, index):
+        self.pause_simulation()  # Pause the simulator
+
+        # Check if the index is valid
+        if index < 0 or index >= self.data_buffer.qsize():
+            self.resume_simulation()  # Resume if index is invalid
+            return None
+        
+        # Get the episode at the specified index
+        episode = list(self.data_buffer.queue)[index]
+
+        # Resume the simulator
+        self.resume_simulation()
+
+        # Normalize obs_batch to be between 0-1
+        obs_batch, action_batch, reward_batch = episode
+        # Normalize obs_batch to be between 0-1
+        obs_batch = np.array(obs_batch) / 255.0
+
+        return obs_batch, np.array(action_batch), np.array(reward_batch)
+
+    def get_latest_episode(self):        
+        # Get the latest episode
+        return self.get_episode_with_index(self.data_buffer.qsize() - 1)
+
+
+
+        
 
     def gen_vid_from_obs(self, obs, filename="simulation.mp4", fps=10.0, frame_size=(96, 96)):
         os.makedirs(os.path.dirname(filename), exist_ok=True)
