@@ -218,11 +218,11 @@ def logits_to_reward(predicted_logits, num_bins=41):
     return predicted_rewards
 
 
-def plot_and_save(losses, title, ylabel, filename):
+def plot_and_save(data, title, ylabel, filename, xlabel='Epoch'):
     plt.figure(figsize=(10, 6))
-    plt.plot(range(1, len(losses) + 1), losses)
-    plt.title(f'{title} over Epochs')
-    plt.xlabel('Epoch')
+    plt.plot(range(1, len(data) + 1), data)
+    plt.title(f'{title} over {xlabel}')
+    plt.xlabel(xlabel)
     plt.ylabel(ylabel)
     plt.grid(True)
     plt.savefig(filename)

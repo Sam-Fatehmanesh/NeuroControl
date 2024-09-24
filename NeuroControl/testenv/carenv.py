@@ -16,9 +16,9 @@ class CarEnv:
         self.continuous = continuous
         self.agent = agent
         if continuous:
-            self.env = gym.make("CarRacing-v2", render_mode=render_mode, continuous=True)
+            self.env = gym.make("CarRacing-v2", render_mode=render_mode, continuous=True, lap_complete_percent=0.95, max_episode_steps=10000)
         else:
-            self.env = gym.make("CarRacing-v2", render_mode=render_mode, continuous=False)
+            self.env = gym.make("CarRacing-v2", render_mode=render_mode, continuous=False, lap_complete_percent=0.95, max_episode_steps=10000)
 
         self.frames_per_obs = frames_per_obs
         self.batch_length = self.frames_per_obs *  seq_length
@@ -110,19 +110,6 @@ class CarEnv:
                         
                     action_seq_index += 1
 
-
-                # action = self.env.action_space.sample()
-
-
-                
-                # if self.continuous:
-                #     action[1] = 1.0
-                #     action[2] = 0.0
-                # else:
-                #     action = 3  # Always go straight
-                # # Turn action from discrete integer into one hot
-
-                #print(action)
 
                 next_obs, reward, terminated, truncated, _ = self.env.step(action)
 

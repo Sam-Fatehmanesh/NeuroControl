@@ -16,7 +16,7 @@ from NeuroControl.custom_functions.utils import logits_to_reward
 
 
 class NeuralWorldModel(nn.Module):
-    def __init__(self, num_frames_per_step, action_dims, image_n, hidden_state_size, image_latent_size_sqrt):
+    def __init__(self, num_frames_per_step, action_dims, image_n, hidden_state_size, image_latent_size_sqrt, reward_prediction_logits_num=41):
         super(NeuralWorldModel, self).__init__()
 
         assert hidden_state_size % num_frames_per_step == 0, "Hidden state size must be divisible by number of frames per step"
@@ -42,7 +42,7 @@ class NeuralWorldModel(nn.Module):
         self.seq_model = NeuralSeqModel(self.hidden_state_size, self.seq_obs_latent, self.action_size, self.frames_per_obs, self.per_image_discrete_latent_size_sqrt)
         self.rep_model = NeuralRepModel(self.hidden_state_size, self.seq_obs_latent, self.frames_per_obs, self.per_image_discrete_latent_size_sqrt)
 
-        self.reward_model = NeuralControlCritic(self.hidden_state_size, self.frames_per_obs, self.frames_per_obs, internal_h_state_multiplier=8)
+        self.reward_model = NeuralControlCritic(self.hidden_state_size, self.frames_per_obs, self.frames_per_obs, internal_h_state_multiplier=8, reward_prediction_logits_num=reward_prediction_logits_num)
 
 
 

@@ -10,3 +10,7 @@ General Ideas
     - Agent will input stimulation for an entire step
     - each step will be some set length of time
     
+
+top, with reward pred
+second, smaller autoencoder
+third, added cnn into decoder

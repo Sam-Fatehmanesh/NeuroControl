@@ -34,8 +34,9 @@ class NeuralControlActor(nn.Module):
         # self.model = TransCNN(num_input_frames, image_n, dim, self.out_dim, num_trans_layers)
         self.mlp_in = MLP(2, hidden_state_and_image_lat_size, hidden_state_and_image_lat_size // 2, self.post_pre_mamba_size)
         self.mamba = nn.Sequential(
-            Mamba(self.seq_embed_size),
-            Mamba(self.seq_embed_size),
+            nn.Identity(),
+            #Mamba(self.seq_embed_size),
+            #Mamba(self.seq_embed_size),
             #Mamba(self.hidden_size),
             #Mamba(self.hidden_size),
         )
@@ -59,8 +60,9 @@ class NeuralControlActor(nn.Module):
         x = self.mlp_out(x)
 
         x = x.view(batch_size, *self.action_dims)
-        x = 0.99*x + 0.01*torch.ones_like(x)/self.action_dims[1]
+        
         x = self.act(x)
+        x = (0.99*x) + (0.01*torch.ones_like(x)/self.action_dims[1])
 
         dist = x
 

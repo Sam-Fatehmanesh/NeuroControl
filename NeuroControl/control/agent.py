@@ -10,6 +10,7 @@ from NeuroControl.custom_functions.utils import *
 from NeuroControl.custom_functions.agc import AGC
 from NeuroControl.models.critic import NeuralControlCritic
 import pdb
+from tqdm import tqdm
 
 
 class NeuralAgent(nn.Module):
@@ -35,9 +36,9 @@ class NeuralAgent(nn.Module):
 
         # Initialize the world and actor models
         print("Initializing world and actor models.")
-        self.world_model = NeuralWorldModel(frames_per_step, self.action_dims, self.image_n, h_state_latent_size, self.image_latent_size_sqrt)
+        self.world_model = NeuralWorldModel(frames_per_step, self.action_dims, self.image_n, h_state_latent_size, self.image_latent_size_sqrt, reward_prediction_logits_num=self.reward_value_exp_bin_count)
         self.actor_model = NeuralControlActor(h_state_latent_size + self.seq_obs_latent, h_state_latent_size*2, self.action_dims)
-        self.critic_model = NeuralControlCritic(h_state_latent_size + self.seq_obs_latent, self.frames_per_step, 1)
+        self.critic_model = NeuralControlCritic(h_state_latent_size + self.seq_obs_latent, self.frames_per_step, 1, reward_prediction_logits_num=self.reward_value_exp_bin_count)
 
         # Loss function and optimizer
         print("Setting up optimizers.")
@@ -49,7 +50,7 @@ class NeuralAgent(nn.Module):
         self.optimizer = LaProp(all_params, eps=1e-20, lr=4e-5)
         
         # Apply AGC to all linear layers
-        linear_layer_names = [name for name, module in self.named_modules() if isinstance(module, nn.Linear)]
+        #linear_layer_names = [name for name, module in self.named_modules() if isinstance(module, nn.Linear)]
         self.optimizer = AGC(all_params, self.optimizer, model=None, ignore_agc=None)
 
 
@@ -59,12 +60,16 @@ class NeuralAgent(nn.Module):
         action_sample, action_dist = self.actor_model(state.detach())
         return action_sample, action_dist
 
-
-
+    def act_sample_from_hidden_state_and_obs(self, hidden_state, obs_lat):
+        state = torch.cat((hidden_state, obs_lat), dim=1)
+        action_sample, action_dist = self.actor_model(state.detach())
+        return action_sample
     
-    def act_learn_forward(self, state):
-        return self.actor_model(state)
-    
+    def state_and_obslat_from_obs(self, obs, action, hidden_state):
+        decoded_obs, pred_next_obs_lat, obs_lats, hidden_state, predicted_rewards_logits, predicted_rewards_logits_ema, obs_lats_dist, pred_obs_lat_dist = self.world_model.forward(obs, action, hidden_state)
+        return hidden_state, obs_lats
+        
+
     def world_model_pre_train_forward(self, obs_list, actions_list, rewards_list):
         total_loss = torch.zeros(1)
 
@@ -92,7 +97,7 @@ class NeuralAgent(nn.Module):
         return decoded_obs_list
 
 
-    def pre_training_loss(self, obs_list, actions_list, rewards_list, all_losses = False):
+    def replay_training_loss(self, obs_list, actions_list, rewards_list, all_losses = False):
         world_total_loss = torch.zeros(1)
         reward_predictor_loss = torch.zeros(1)
         decoder_representation_loss = torch.zeros(1)
@@ -153,25 +158,42 @@ class NeuralAgent(nn.Module):
             #total_loss += torch.flatten(representation_loss) + torch.flatten(reward_prediction_loss) + torch.flatten(kl_loss)
 
         model_states = model_states[:, 1:, :]
-        predicted_value_logits, predicted_value_logits_ema = self.critic_model(model_states.detach().view(batch_size*batch_length, -1))
+        predicted_value_logits, predicted_value_logits_ema = self.critic_model(model_states.detach().reshape(batch_size*batch_length, -1))
         
         predicted_value_logits = torch.squeeze(predicted_value_logits, dim=1)
         predicted_value_logits_ema = torch.squeeze(predicted_value_logits_ema, dim=1)
 
-        predicted_value = logits_to_reward(predicted_value_logits)
-        predicted_value_ema = logits_to_reward(predicted_value_logits_ema)
+        predicted_value = logits_to_reward(predicted_value_logits, self.reward_value_exp_bin_count)
+        predicted_value_ema = logits_to_reward(predicted_value_logits_ema, self.reward_value_exp_bin_count)
 
         predicted_value = predicted_value.reshape(batch_size, batch_length)
         predicted_value_ema = predicted_value_ema.reshape(batch_size, batch_length)
 
+        reward_sums = torch.sum(rewards_list.view(batch_size, self.frames_per_step, batch_length), dim=1).view(batch_size, batch_length)
+        returns = self.compute_returns(reward_sums, predicted_value.detach())
 
 
+        twohotloss, predicted_value = twohot_symexp_loss(predicted_value_logits.reshape(-1, self.reward_value_exp_bin_count), 
+                                                        returns.reshape(-1).detach(), 
+                                                        num_bins=self.reward_value_exp_bin_count)
+
+        critic_ema_reg_loss = F.cross_entropy(predicted_value_logits.reshape(-1, self.reward_value_exp_bin_count), 
+                                            torch.softmax(predicted_value_logits_ema.reshape(-1, self.reward_value_exp_bin_count), dim=1), 
+                                            reduction="mean")
+
+        critic_loss = (twohotloss + critic_ema_reg_loss)
+
+
+
+        tqdm.write("$$$$$$$$$$$$$$$$$$$$$$$")
+        tqdm.write(str(predicted_rewards))
+        tqdm.write(str(rewards))
 
         
         world_total_loss = reward_predictor_loss + decoder_representation_loss + dynamics_encoder_kl_loss
         if all_losses:
-            return world_total_loss, decoder_representation_loss, reward_predictor_loss, dynamics_encoder_kl_loss, mse_rewards_loss, (init_obs_lat, init_h_state)
-        return world_total_loss, (init_obs_lat, init_h_state)
+            return world_total_loss, decoder_representation_loss, reward_predictor_loss, dynamics_encoder_kl_loss, mse_rewards_loss, critic_loss, (init_obs_lat, init_h_state)
+        return world_total_loss, critic_loss, (init_obs_lat, init_h_state)
 
 
 
@@ -300,7 +322,7 @@ class NeuralAgent(nn.Module):
         return returns
 
 
-    def imaginary_training(self, initial_h_state, initial_obs_latent, initial_reward, horizon=15, repeat=1, batch_multiplier=1):
+    def imaginary_training(self, initial_h_state, initial_obs_latent, initial_reward, horizon=3, repeat=1, batch_multiplier=1):
         batch_size = initial_h_state.shape[0]
         device = initial_h_state.device
 
@@ -334,8 +356,8 @@ class NeuralAgent(nn.Module):
             predicted_value_logits = torch.squeeze(predicted_value_logits, dim=1)
             predicted_value_logits_ema = torch.squeeze(predicted_value_logits_ema, dim=1)
 
-            predicted_value = logits_to_reward(predicted_value_logits)
-            predicted_value_ema = logits_to_reward(predicted_value_logits_ema)
+            predicted_value = logits_to_reward(predicted_value_logits, self.reward_value_exp_bin_count)
+            predicted_value_ema = logits_to_reward(predicted_value_logits_ema, self.reward_value_exp_bin_count)
 
             predicted_value = predicted_value.reshape(batch_size, batch_length)
             predicted_value_ema = predicted_value_ema.reshape(batch_size, batch_length)
@@ -382,5 +404,7 @@ class NeuralAgent(nn.Module):
             imagined_probable_action = action_samples.sum(dim=tuple(range(action_samples.dim() - 1))).argmax()
 
 
+
+        critic_loss = torch.squeeze(critic_loss)
 
         return actor_loss, critic_loss, total_predicted_return, imagined_probable_action
